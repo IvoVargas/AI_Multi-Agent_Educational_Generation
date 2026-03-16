@@ -51,20 +51,20 @@ START
 - Python 3.10+
 - Dependências em `requirements.txt`
 
-## Instalação
+## Instalação (Windows CMD)
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
 > O ficheiro `.env.example` está incluído para futuras integrações com APIs externas.
 
-## Como executar
+## Como executar (Windows CMD)
 
 ```bash
-PYTHONPATH=src python -m edu_multi_agent.main
+set PYTHONPATH=src && python -m edu_multi_agent.main
 ```
 
 Depois, introduza:
