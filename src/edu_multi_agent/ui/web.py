@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-import gradio as gr
-from pypdf import PdfReader
+from typing import Any
 
 from edu_multi_agent.state import ReviewDecision, WorkflowState
 from edu_multi_agent.workflow.graph import build_workflow
@@ -27,6 +25,11 @@ def _extract_source_text(file_path: str | None, text_input: str) -> str:
     if suffix == ".txt":
         file_text = path.read_text(encoding="utf-8", errors="ignore")
     elif suffix == ".pdf":
+        try:
+            from pypdf import PdfReader
+        except ImportError as error:
+            raise RuntimeError("Dependência pypdf não encontrada. Instale com: pip install -r requirements.txt") from error
+
         reader = PdfReader(str(path))
         pages = [page.extract_text() or "" for page in reader.pages]
         file_text = "\n".join(pages)
@@ -76,7 +79,15 @@ def generate_slides_plan(
     )
 
 
-def build_web_app() -> gr.Blocks:
+def build_web_app() -> Any:
+    try:
+        import gradio as gr
+    except ImportError as error:
+        raise RuntimeError(
+            "Não foi possível importar Gradio. Reinstale dependências com: "
+            "pip install -r requirements.txt --upgrade --force-reinstall"
+        ) from error
+
     with gr.Blocks(title="MVP Multi-Agente para Slides") as demo:
         gr.Markdown("# MVP Multi-Agente para Geração de Slides PowerPoint")
         gr.Markdown(
