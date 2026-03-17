@@ -1,16 +1,16 @@
 # AI Multi-Agent Educational Generation (MVP)
 
-Protótipo funcional de um sistema **multi-agente** para apoiar docentes na criação de conteúdo educativo multimédia.
+Protótipo funcional de sistema **multi-agente** para apoiar docentes na geração de **plano de slides PowerPoint**.
 
 ## Objetivo do MVP
 
-Este MVP implementa uma arquitetura inicial com 4 agentes:
+Este MVP implementa arquitetura com 4 agentes:
 1. **Agente Principal (Orquestrador)**
 2. **Analista de Conteúdo**
 3. **Designer Pedagógico**
-4. **Gerador Multimédia**
+4. **Gerador de Slides PowerPoint**
 
-A orquestração é feita com **LangGraph**, incluindo **human-in-the-loop entre etapas** para revisão e aprovação antes de avançar no fluxo.
+A orquestração é feita com **LangGraph**.
 
 ## Arquitetura
 
@@ -24,7 +24,8 @@ src/edu_multi_agent/
 ├── workflow/
 │   └── graph.py
 ├── ui/
-│   └── cli.py
+│   ├── cli.py
+│   └── web.py
 ├── state.py
 └── main.py
 ```
@@ -35,13 +36,13 @@ src/edu_multi_agent/
 START
   -> orchestrator (agente principal decide próximo passo)
   -> content_analyst
-  -> review_content (humano: aprova | refaz | edita)
+  -> review_content
   -> orchestrator
   -> instructional_designer
-  -> review_design (humano: aprova | refaz | edita)
+  -> review_design
   -> orchestrator
   -> multimedia_generator
-  -> review_multimedia (humano: aprova | refaz | edita)
+  -> review_multimedia
   -> orchestrator
   -> END
 ```
