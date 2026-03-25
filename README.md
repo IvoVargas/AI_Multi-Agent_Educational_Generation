@@ -2,122 +2,133 @@
 
 Protótipo funcional de sistema **multi-agente** para apoiar docentes na geração de **plano de slides PowerPoint**.
 
-## Objetivo do MVP
+## Objetivo do MVP (V1)
 
-Este MVP implementa arquitetura com 4 agentes:
-1. **Agente Principal (Orquestrador)**
-2. **Analista de Conteúdo**
-3. **Designer Pedagógico**
-4. **Gerador de Slides PowerPoint**
+A primeira versão do protótipo deve ser capaz de:
+1. **receber um texto-base e metadados pela interface Gradio**
+2. **executar um fluxo LangGraph com três agentes**
+3. **mostrar ao utilizador:**
+   - análise conceptual;
+   - estrutura pedagógica;
+   - proposta final de slides;
+4. **permitir validação/reformulação em dois pontos**
+5. **gerar uma apresentação final em PowerPoint (.pptx)**
+6. **incluir, por slide, uma descrição visual ou prompt de imagem.**
 
-A orquestração é feita com **LangGraph**.
+---
+Nesta V1, a geração real de imagem pode ficar opcional. O essencial é garantir:
+- fluxo funcional;
+- estrutura coerente;
+- exportação do PowerPoint.
+
+
+## Decisão de objetivos para a V1
+
+1. **O que a V1 faz:**
+   - gera texto dos slides;
+   - gera sugestões visuais por slide;
+   - exporta ficheiro .pptx;
+   - suporta reformulação após análise e após estrutura pedagógica.
+
+2. **O que a V1 não precisa de fazer:**
+   - autenticação;
+   - base de dados;
+   - histórico persistente;
+   - geração avançada de design;
+   - integração LMS;
+   - geração obrigatória de imagens reais;
+   - múltiplos utilizadores em simultâneo.
+
 
 ## Arquitetura
 
 ```text
-src/edu_multi_agent/
-├── agents/
-│   ├── orchestrator.py
-│   ├── content_analyst.py
-│   ├── instructional_designer.py
-│   └── multimedia_generator.py
-├── workflow/
-│   └── graph.py
-├── ui/
-│   ├── cli.py
-│   └── web.py
-├── state.py
-└── main.py
+edu_multi_agent/
+│
+├── app.py
+├── requirements.txt
+├── .env
+├── .gitignore
+├── LICENSE
+├── README.md
+│
+├── src/
+│   ├── config.py
+│   ├── state.py
+│   ├── graph.py
+│   ├── models.py
+│   │
+│   ├── agents/
+│   │   ├── content_analyst.py
+│   │   ├── pedagogical_designer.py
+│   │   └── multimedia_generator.py
+│   │
+│   ├── services/
+│   │   ├── llm_service.py
+│   │   ├── pptx_service.py
+│   │   └── image_service.py
+│   │
+│   ├── ui/
+│   │   └── gradio_ui.py
+│   │
+│   └── utils/
+│       ├── formatters.py
+│       ├── validators.py
+│       └── logging_utils.py
+│
+├── outputs/
+│   ├── presentations/
+│   └── images/
+│
+└── tests/
+    ├── test_state.py
+    ├── test_agents.py
+    └── test_graph.py
 ```
 
 ### Fluxo do grafo (LangGraph)
 
 ```text
 START
-  -> orchestrator (agente principal decide próximo passo)
-  -> content_analyst
-  -> review_content
-  -> orchestrator
-  -> instructional_designer
-  -> review_design
-  -> orchestrator
-  -> multimedia_generator
-  -> review_multimedia
-  -> orchestrator
+  -> content_analysis_node
+  -> analysis_review_node
+      -> pedagogical_design_node        se aprovado
+      -> content_analysis_node          se reformulação
+  -> structure_review_node
+      -> multimedia_generation_node     se aprovado
+      -> pedagogical_design_node        se reformulação
+  -> export_pptx_node
   -> END
 ```
 
-## Interface Web (Gradio)
+## Interface Gradio
 
-A aplicação agora usa **Gradio** em vez de interface de linha de comando.
+A interface com três zonas:
+### Zona 1 — input
+ - textbox do texto-base;
+ - campos dos metadados;
+ - botão “Iniciar geração”.
+### Zona 2 — validações
+ - mostrar análise conceptual;
+ - botão “Aprovar análise”;
+ - caixa “Feedback de reformulação”.
+ - mostrar estrutura pedagógica;
+ - botão “Aprovar estrutura”;
+ - caixa “Feedback de reformulação”.
+### Zona 3 — resultado final
+ - pré-visualização textual dos slides;
+ - botão de download do .pptx.
 
-Entradas:
-- Tema
-- Público-alvo
-- Objetivos de aprendizagem (separados por `;`)
-- Contexto adicional (texto livre)
-- Upload de ficheiro `.txt` ou `.pdf` com material de referência
 
-Saídas:
-- Análise de conteúdo
-- Proposta pedagógica
-- Plano final de slides PowerPoint
+ ## Criar e ativar o ambiente virtual no Windows
 
-## Requisitos
+No terminal, dentro da pasta do projeto:
 
-- Python 3.10+
-- Dependências em `requirements.txt`
-
-## Instalação
-
-Linux/macOS:
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+.venv\Scripts\activate
 pip install -r requirements.txt
+python app.py
 ```
 
-Windows (PowerShell):
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-## Como executar
-
-Linux/macOS:
-```bash
-PYTHONPATH=src python -m edu_multi_agent.main
-```
-
-Windows (cmd):
-```cmd
-set PYTHONPATH=src && python -m edu_multi_agent.main
-```
-
-Depois abra o URL local exibido no terminal (normalmente `http://127.0.0.1:7860`).
-
-
-## Troubleshooting
-
-Se ocorrer erro `ImportError: cannot import name "HfFolder" from huggingface_hub` ao iniciar o Gradio, reinstale as dependências do projeto para aplicar o pin compatível:
-
-```bash
-pip install -r requirements.txt --upgrade --force-reinstall
-```
-
-O projeto fixa `huggingface_hub<0.26` para compatibilidade com Gradio 4.x.
-
-## Notas do MVP
-
-- O foco desta versão é **apenas** geração de plano de slides PowerPoint.
-- O upload de PDF/TXT é usado como contexto para enriquecer os resultados.
-- Os agentes ainda são stubs textuais para facilitar evolução futura.
-
-## Próximos passos sugeridos
-
-1. Integrar LLM real por agente.
-2. Adicionar revisão humana etapa-a-etapa diretamente na UI web.
-3. Gerar ficheiro `.pptx` real a partir do plano final.
-4. Adicionar testes unitários para nós e rotas do grafo.
+Aceder à interface em `http://127.0.0.1:7860` para testar o protótipo.
