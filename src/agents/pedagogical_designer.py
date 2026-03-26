@@ -1,74 +1,120 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict
+
+from src.services.llm_service import LLMService
+
+llm = LLMService()
 
 
-def _build_slide_sequence(
-    theme: str,
-    main_topics: List[str],
-    num_slides: int,
-) -> List[Dict[str, Any]]:
-    sequence: List[Dict[str, Any]] = []
+def _fallback_structure(state: dict) -> Dict[str, Any]:
+    metadata = state.get("metadata", {})
+    content_analysis = state.get("content_analysis", {})
+    title = metadata.get("title", "").strip() or content_analysis.get("theme", "Apresentação")
+    topics = content_analysis.get("main_topics", []) or ["introdução", "desenvolvimento", "síntese"]
+    num_slides = int(metadata.get("num_slides", 6))
 
-    topics = main_topics[: max(1, num_slides - 2)]
-    if not topics:
-        topics = ["introdução", "desenvolvimento", "síntese"]
-
-    for index, topic in enumerate(topics, start=1):
-        sequence.append(
+    slide_sequence = []
+    for idx, topic in enumerate(topics[: max(1, num_slides - 2)], start=1):
+        slide_sequence.append(
             {
-                "slide_number": index,
-                "title": f"{topic.capitalize()}",
-                "objective": f"Apresentar {topic} no contexto de {theme}",
+                "slide_number": idx,
+                "title": topic.capitalize(),
+                "objective": f"Apresentar {topic}",
                 "content_points": [
-                    f"Explicação principal sobre {topic}",
-                    f"Relação de {topic} com o tema",
-                    f"Exemplo ou observação relevante",
+                    f"Definir {topic}",
+                    f"Explicar a relevância de {topic}",
+                    f"Dar um exemplo relacionado com {topic}",
                 ],
             }
         )
 
-    return sequence
-
-
-def run_pedagogical_designer(state: dict) -> dict:
-    metadata = state.get("metadata", {})
-    content_analysis = state.get("content_analysis", {})
-
-    theme = content_analysis.get("theme", metadata.get("title", "Tema"))
-    main_topics = content_analysis.get("main_topics", [])
-    num_slides = int(metadata.get("num_slides", 6))
-
-    slide_sequence = _build_slide_sequence(theme, main_topics, num_slides)
-
-    pedagogical_structure = {
-        "presentation_title": metadata.get("title", "").strip() or f"Introdução a {theme}",
+    return {
+        "presentation_title": title,
         "learning_objectives": [
-            f"Compreender os aspetos centrais de {theme}",
-            f"Identificar aplicações, exemplos ou limitações de {theme}",
+            f"Compreender os aspetos principais de {title}",
+            f"Relacionar conceitos e aplicações do tema",
         ],
         "sections": [
             {
                 "section_title": "Introdução",
-                "goal": "Apresentar o tema e o seu contexto",
-                "topics": main_topics[:2] or ["conceitos fundamentais"],
+                "goal": "Apresentar o tema",
+                "topics": topics[:2],
             },
             {
                 "section_title": "Desenvolvimento",
                 "goal": "Explorar os tópicos principais",
-                "topics": main_topics[2:4] or ["explicação do conteúdo"],
+                "topics": topics[2:4],
             },
             {
                 "section_title": "Síntese",
                 "goal": "Consolidar as ideias principais",
-                "topics": main_topics[4:] or ["conclusões"],
+                "topics": topics[4:],
             },
         ],
         "slide_sequence": slide_sequence,
     }
 
+
+def run_pedagogical_designer(state: dict) -> dict:
+    metadata = state.get("metadata", {})
+    content_analysis = state.get("content_analysis", {})
+    feedback = state.get("structure_feedback", "").strip()
+
+    system_prompt = """
+És um Designer Pedagógico para um sistema de geração de apresentações educativas.
+Recebes uma análise conceptual e deves devolver apenas um objeto JSON válido.
+
+Devolve exatamente esta estrutura:
+{
+  "presentation_title": "string",
+  "learning_objectives": ["string"],
+  "sections": [
+    {
+      "section_title": "string",
+      "goal": "string",
+      "topics": ["string"]
+    }
+  ],
+  "slide_sequence": [
+    {
+      "slide_number": 1,
+      "title": "string",
+      "objective": "string",
+      "content_points": ["string"]
+    }
+  ]
+}
+
+Regras:
+- Escreve em português de Portugal.
+- Não cries markdown.
+- Não incluas texto fora do JSON.
+- A estrutura deve ser adequada a uma apresentação educativa.
+"""
+
+    user_prompt = f"""
+Análise conceptual:
+{content_analysis}
+
+Metadados:
+{metadata}
+
+Feedback de reformulação anterior:
+{feedback if feedback else "Sem feedback anterior."}
+"""
+
+    try:
+        pedagogical_structure = llm.generate_json(system_prompt, user_prompt)
+    except Exception:
+        pedagogical_structure = _fallback_structure(state)
+
     return {
         "pedagogical_structure": pedagogical_structure,
+        "structure_approved": False,
+        "slide_plan": [],
+        "presentation_path": "",
         "current_step": "pedagogical_design",
         "status": "structure_completed",
+        "error_message": "",
     }

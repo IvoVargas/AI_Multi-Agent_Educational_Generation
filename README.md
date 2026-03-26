@@ -132,3 +132,16 @@ python app.py
 ```
 
 Aceder à interface em `http://127.0.0.1:7860` para testar o protótipo.
+
+## Fluxo de utilização
+
+1. Preencher o texto-base e os metadados.
+2. Clicar em **Gerar análise conceptual**.
+3. Rever a análise e:
+   - aprovar, ou
+   - pedir reformulação com feedback.
+4. Clicar em **Gerar estrutura pedagógica**.
+5. Rever a estrutura e:
+   - aprovar, ou
+   - pedir reformulação com feedback.
+6. Clicar em **Gerar PowerPoint final**.
