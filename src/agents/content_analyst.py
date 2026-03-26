@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Dict
 
+from src.models import ContentAnalysisModel
 from src.services.llm_service import LLMService
+from src.utils.logging_utils import get_logger
 
+logger = get_logger(__name__)
 llm = LLMService()
 
 
-def _fallback_analysis(state: dict) -> Dict[str, Any]:
+def _fallback_analysis(state: dict) -> Dict:
     user_input = state.get("user_input", "")
     metadata = state.get("metadata", {})
     title = metadata.get("title", "").strip() or "Tema não especificado"
@@ -31,9 +34,7 @@ def _fallback_analysis(state: dict) -> Dict[str, Any]:
             "vantagens e limitações",
             "síntese",
         ],
-        "prerequisites": [
-            "conhecimentos introdutórios relacionados com o tema"
-        ],
+        "prerequisites": ["conhecimentos introdutórios relacionados com o tema"],
         "possible_difficulties": [
             "interpretação de conceitos mais abstratos",
             "distinção entre noções próximas",
@@ -42,15 +43,16 @@ def _fallback_analysis(state: dict) -> Dict[str, Any]:
 
 
 def run_content_analyst(state: dict) -> dict:
+    logger.info("Content analyst started")
     user_input = state.get("user_input", "")
     metadata = state.get("metadata", {})
     feedback = state.get("analysis_feedback", "").strip()
 
     system_prompt = """
 És um Analista de Conteúdo para um sistema de geração de apresentações educativas.
-A tua função é analisar um texto-base e devolver apenas um objeto JSON válido.
+Responde apenas com JSON válido.
 
-Devolve exatamente esta estrutura:
+Estrutura obrigatória:
 {
   "theme": "string",
   "summary": "string",
@@ -59,12 +61,6 @@ Devolve exatamente esta estrutura:
   "prerequisites": ["string"],
   "possible_difficulties": ["string"]
 }
-
-Regras:
-- Escreve em português de Portugal.
-- Não cries markdown.
-- Não incluas texto fora do JSON.
-- Sê objetivo, pedagógico e estruturado.
 """
 
     user_prompt = f"""
@@ -74,15 +70,21 @@ Texto-base:
 Metadados:
 {metadata}
 
-Feedback de reformulação anterior:
+Feedback anterior:
 {feedback if feedback else "Sem feedback anterior."}
 """
 
     try:
-        content_analysis = llm.generate_json(system_prompt, user_prompt)
+        content_analysis = llm.generate_structured(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema=ContentAnalysisModel,
+        )
     except Exception:
+        logger.exception("Content analyst failed. Using fallback.")
         content_analysis = _fallback_analysis(state)
 
+    logger.info("Content analyst completed")
     return {
         "content_analysis": content_analysis,
         "analysis_approved": False,

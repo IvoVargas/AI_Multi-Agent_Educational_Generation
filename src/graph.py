@@ -12,27 +12,34 @@ from src.agents.pedagogical_designer import run_pedagogical_designer
 from src.config import OUTPUT_DIR
 from src.services.pptx_service import build_presentation
 from src.state import PrototypeState
+from src.utils.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 def run_analysis_step(state: PrototypeState) -> PrototypeState:
+    logger.info("Pipeline step: analysis")
     updated = dict(state)
     updated.update(run_content_analyst(updated))
     return updated
 
 
 def run_structure_step(state: PrototypeState) -> PrototypeState:
+    logger.info("Pipeline step: pedagogical structure")
     updated = dict(state)
     updated.update(run_pedagogical_designer(updated))
     return updated
 
 
 def run_multimedia_step(state: PrototypeState) -> PrototypeState:
+    logger.info("Pipeline step: multimedia generation")
     updated = dict(state)
     updated.update(run_multimedia_generator(updated))
     return updated
 
 
 def export_pptx_step(state: PrototypeState) -> PrototypeState:
+    logger.info("Pipeline step: export pptx")
     updated = dict(state)
     title = updated.get("metadata", {}).get("title", "presentation").strip() or "presentation"
     safe_title = re.sub(r"[^a-zA-Z0-9_-]+", "_", title).strip("_").lower() or "presentation"
@@ -50,6 +57,7 @@ def export_pptx_step(state: PrototypeState) -> PrototypeState:
     updated["presentation_path"] = presentation_path
     updated["current_step"] = "export"
     updated["status"] = "completed"
+    logger.info("Pipeline finished: %s", presentation_path)
     return updated
 
 

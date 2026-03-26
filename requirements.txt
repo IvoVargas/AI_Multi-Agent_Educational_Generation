@@ -3,5 +3,6 @@ langgraph
 langchain
 python-pptx
 python-dotenv
-pydantic
+pydantic>=2
 openai
+Pillow

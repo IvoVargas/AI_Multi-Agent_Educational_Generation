@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Dict
 
+from src.models import PedagogicalStructureModel
 from src.services.llm_service import LLMService
+from src.utils.logging_utils import get_logger
 
+logger = get_logger(__name__)
 llm = LLMService()
 
 
-def _fallback_structure(state: dict) -> Dict[str, Any]:
+def _fallback_structure(state: dict) -> Dict:
     metadata = state.get("metadata", {})
     content_analysis = state.get("content_analysis", {})
     title = metadata.get("title", "").strip() or content_analysis.get("theme", "Apresentação")
@@ -57,15 +60,16 @@ def _fallback_structure(state: dict) -> Dict[str, Any]:
 
 
 def run_pedagogical_designer(state: dict) -> dict:
+    logger.info("Pedagogical designer started")
     metadata = state.get("metadata", {})
     content_analysis = state.get("content_analysis", {})
     feedback = state.get("structure_feedback", "").strip()
 
     system_prompt = """
 És um Designer Pedagógico para um sistema de geração de apresentações educativas.
-Recebes uma análise conceptual e deves devolver apenas um objeto JSON válido.
+Responde apenas com JSON válido.
 
-Devolve exatamente esta estrutura:
+Estrutura obrigatória:
 {
   "presentation_title": "string",
   "learning_objectives": ["string"],
@@ -85,12 +89,6 @@ Devolve exatamente esta estrutura:
     }
   ]
 }
-
-Regras:
-- Escreve em português de Portugal.
-- Não cries markdown.
-- Não incluas texto fora do JSON.
-- A estrutura deve ser adequada a uma apresentação educativa.
 """
 
     user_prompt = f"""
@@ -100,15 +98,21 @@ Análise conceptual:
 Metadados:
 {metadata}
 
-Feedback de reformulação anterior:
+Feedback anterior:
 {feedback if feedback else "Sem feedback anterior."}
 """
 
     try:
-        pedagogical_structure = llm.generate_json(system_prompt, user_prompt)
+        pedagogical_structure = llm.generate_structured(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            schema=PedagogicalStructureModel,
+        )
     except Exception:
+        logger.exception("Pedagogical designer failed. Using fallback.")
         pedagogical_structure = _fallback_structure(state)
 
+    logger.info("Pedagogical designer completed")
     return {
         "pedagogical_structure": pedagogical_structure,
         "structure_approved": False,
