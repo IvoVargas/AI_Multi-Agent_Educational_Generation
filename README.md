@@ -90,15 +90,16 @@ edu_multi_agent/
 
 ```text
 START
-  -> content_analysis_node
-  -> analysis_review_node
-      -> pedagogical_design_node        se aprovado
-      -> content_analysis_node          se reformulação
-  -> structure_review_node
-      -> multimedia_generation_node     se aprovado
-      -> pedagogical_design_node        se reformulação
-  -> export_pptx_node
-  -> END
+  -> orchestrator
+      -> ask_user / stop
+      -> content_analysis
+      -> orchestrator
+      -> pedagogical_design
+      -> orchestrator
+      -> multimedia_generation
+      -> orchestrator
+      -> export_pptx
+      -> END
 ```
 
 ## Interface Gradio

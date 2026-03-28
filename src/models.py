@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -81,3 +81,10 @@ class SlidePlanItemModel(BaseModel):
     def normalize_bullets(cls, values: List[str]) -> List[str]:
         cleaned = [v.strip() for v in values if isinstance(v, str) and v.strip()]
         return cleaned[:6]
+
+
+class OrchestratorMessageModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    assistant_message: str = Field(min_length=5, max_length=600)
+    tone: Literal["request_info", "inform", "approval", "completion"] = "inform"

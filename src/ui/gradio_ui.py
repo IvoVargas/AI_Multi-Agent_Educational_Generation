@@ -4,12 +4,7 @@ import json
 
 import gradio as gr
 
-from src.graph import (
-    export_pptx_step,
-    run_analysis_step,
-    run_multimedia_step,
-    run_structure_step,
-)
+from src.graph import run_analysis_step, run_orchestrated_cycle, run_structure_step
 from src.state import PrototypeState, create_initial_state
 
 
@@ -43,7 +38,8 @@ def _build_or_reset_state(
     )
 
 
-def generate_analysis(
+def _sync_form_into_state(
+    app_state,
     text_base,
     title,
     target_audience,
@@ -53,7 +49,50 @@ def generate_analysis(
     language,
     extra_instructions,
 ):
-    state = _build_or_reset_state(
+    if not app_state:
+        return _build_or_reset_state(
+            text_base,
+            title,
+            target_audience,
+            education_level,
+            presentation_goal,
+            num_slides,
+            language,
+            extra_instructions,
+        )
+
+    state = dict(app_state)
+    state["user_input"] = text_base.strip()
+
+    metadata = dict(state.get("metadata", {}))
+    metadata.update(
+        {
+            "title": title.strip(),
+            "target_audience": target_audience.strip(),
+            "education_level": education_level.strip(),
+            "presentation_goal": presentation_goal.strip(),
+            "num_slides": int(num_slides),
+            "language": language.strip() or "pt-PT",
+            "extra_instructions": extra_instructions.strip(),
+        }
+    )
+    state["metadata"] = metadata
+    return state
+
+
+def continue_with_orchestrator(
+    app_state,
+    text_base,
+    title,
+    target_audience,
+    education_level,
+    presentation_goal,
+    num_slides,
+    language,
+    extra_instructions,
+):
+    state = _sync_form_into_state(
+        app_state,
         text_base,
         title,
         target_audience,
@@ -63,15 +102,20 @@ def generate_analysis(
         language,
         extra_instructions,
     )
-    state = run_analysis_step(state)
+
+    state = run_orchestrated_cycle(state)
+
+    presentation_path = state.get("presentation_path") or None
+    status_message = state.get("assistant_message") or f"Estado: {state.get('status', '')}"
 
     return (
         state,
+        state.get("assistant_message", ""),
         _pretty(state.get("content_analysis", {})),
-        "",
-        "",
-        None,
-        _status("Análise conceptual gerada. Revê o resultado e aprova ou pede reformulação."),
+        _pretty(state.get("pedagogical_structure", {})),
+        _pretty(state.get("slide_plan", [])),
+        presentation_path,
+        _status(status_message),
     )
 
 
@@ -79,22 +123,30 @@ def regenerate_analysis(feedback, app_state):
     if not app_state:
         raise gr.Error("Gera primeiro a análise conceptual.")
 
-    app_state["analysis_feedback"] = feedback.strip()
-    app_state["analysis_approved"] = False
-    app_state["pedagogical_structure"] = {}
-    app_state["structure_approved"] = False
-    app_state["slide_plan"] = []
-    app_state["presentation_path"] = ""
+    state = dict(app_state)
+    state["analysis_feedback"] = feedback.strip()
+    state["analysis_approved"] = False
+    state["pedagogical_structure"] = {}
+    state["structure_approved"] = False
+    state["slide_plan"] = []
+    state["presentation_path"] = ""
 
-    app_state = run_analysis_step(app_state)
+    state = run_analysis_step(state)
+
+    assistant_message = "Análise conceptual regenerada com base no feedback. Revê e aprova ou volta a reformular."
+    state["assistant_message"] = assistant_message
+    state["next_action"] = "wait_analysis_approval"
+    state["awaiting_user_input"] = True
+    state["status"] = "awaiting_input"
 
     return (
-        app_state,
-        _pretty(app_state.get("content_analysis", {})),
-        "",
-        "",
+        state,
+        assistant_message,
+        _pretty(state.get("content_analysis", {})),
+        _pretty(state.get("pedagogical_structure", {})),
+        _pretty(state.get("slide_plan", [])),
         None,
-        _status("Análise conceptual regenerada com base no feedback."),
+        _status(assistant_message),
     )
 
 
@@ -102,42 +154,42 @@ def approve_analysis(app_state):
     if not app_state or not app_state.get("content_analysis"):
         raise gr.Error("Não existe análise para aprovar.")
 
-    app_state["analysis_approved"] = True
-    return app_state, _status("Análise aprovada. Já podes gerar a estrutura pedagógica.")
+    state = dict(app_state)
+    state["analysis_approved"] = True
+    state["assistant_message"] = "Análise aprovada. Carrega em 'Iniciar / Continuar com orquestrador' para gerar a estrutura pedagógica."
+    state["next_action"] = "run_pedagogical_design"
+    state["awaiting_user_input"] = False
+    state["status"] = "ready_to_continue"
 
-
-def generate_structure(app_state):
-    if not app_state or not app_state.get("analysis_approved"):
-        raise gr.Error("Aprova primeiro a análise conceptual.")
-
-    app_state = run_structure_step(app_state)
-
-    return (
-        app_state,
-        _pretty(app_state.get("pedagogical_structure", {})),
-        "",
-        None,
-        _status("Estrutura pedagógica gerada. Revê e aprova ou pede reformulação."),
-    )
+    return state, state["assistant_message"], _status(state["assistant_message"])
 
 
 def regenerate_structure(feedback, app_state):
     if not app_state or not app_state.get("content_analysis"):
         raise gr.Error("Gera primeiro a estrutura pedagógica.")
 
-    app_state["structure_feedback"] = feedback.strip()
-    app_state["structure_approved"] = False
-    app_state["slide_plan"] = []
-    app_state["presentation_path"] = ""
+    state = dict(app_state)
+    state["structure_feedback"] = feedback.strip()
+    state["structure_approved"] = False
+    state["slide_plan"] = []
+    state["presentation_path"] = ""
 
-    app_state = run_structure_step(app_state)
+    state = run_structure_step(state)
+
+    assistant_message = "Estrutura pedagógica regenerada com base no feedback. Revê e aprova ou volta a reformular."
+    state["assistant_message"] = assistant_message
+    state["next_action"] = "wait_structure_approval"
+    state["awaiting_user_input"] = True
+    state["status"] = "awaiting_input"
 
     return (
-        app_state,
-        _pretty(app_state.get("pedagogical_structure", {})),
-        "",
+        state,
+        assistant_message,
+        _pretty(state.get("content_analysis", {})),
+        _pretty(state.get("pedagogical_structure", {})),
+        _pretty(state.get("slide_plan", [])),
         None,
-        _status("Estrutura pedagógica regenerada com base no feedback."),
+        _status(assistant_message),
     )
 
 
@@ -145,23 +197,14 @@ def approve_structure(app_state):
     if not app_state or not app_state.get("pedagogical_structure"):
         raise gr.Error("Não existe estrutura para aprovar.")
 
-    app_state["structure_approved"] = True
-    return app_state, _status("Estrutura aprovada. Já podes gerar a apresentação final.")
+    state = dict(app_state)
+    state["structure_approved"] = True
+    state["assistant_message"] = "Estrutura aprovada. Carrega em 'Iniciar / Continuar com orquestrador' para gerar o PowerPoint final."
+    state["next_action"] = "run_multimedia_generation"
+    state["awaiting_user_input"] = False
+    state["status"] = "ready_to_continue"
 
-
-def generate_presentation(app_state):
-    if not app_state or not app_state.get("structure_approved"):
-        raise gr.Error("Aprova primeiro a estrutura pedagógica.")
-
-    app_state = run_multimedia_step(app_state)
-    app_state = export_pptx_step(app_state)
-
-    return (
-        app_state,
-        _pretty(app_state.get("slide_plan", [])),
-        app_state.get("presentation_path", ""),
-        _status("Apresentação gerada com sucesso."),
-    )
+    return state, state["assistant_message"], _status(state["assistant_message"])
 
 
 def build_interface():
@@ -169,7 +212,9 @@ def build_interface():
         app_state = gr.State({})
 
         gr.Markdown("# AI Multi-Agent Educational Generation")
-        gr.Markdown("Protótipo com validação humana real em duas etapas: análise conceptual e estrutura pedagógica.")
+        gr.Markdown(
+            "Protótipo com agente LLM orquestrador, agentes especializados e validação humana em duas etapas."
+        )
 
         with gr.Row():
             with gr.Column(scale=1):
@@ -182,28 +227,28 @@ def build_interface():
                 language = gr.Textbox(label="Idioma", value="pt-PT")
                 extra_instructions = gr.Textbox(label="Instruções adicionais", lines=4)
 
-                generate_analysis_btn = gr.Button("1. Gerar análise conceptual", variant="primary")
+                continue_btn = gr.Button("Iniciar / Continuar com orquestrador", variant="primary")
+
                 analysis_feedback = gr.Textbox(label="Feedback para reformular a análise", lines=3)
-                regenerate_analysis_btn = gr.Button("1A. Regenerar análise")
-                approve_analysis_btn = gr.Button("1B. Aprovar análise")
+                regenerate_analysis_btn = gr.Button("Regenerar análise")
+                approve_analysis_btn = gr.Button("Aprovar análise")
 
-                generate_structure_btn = gr.Button("2. Gerar estrutura pedagógica", variant="primary")
                 structure_feedback = gr.Textbox(label="Feedback para reformular a estrutura", lines=3)
-                regenerate_structure_btn = gr.Button("2A. Regenerar estrutura")
-                approve_structure_btn = gr.Button("2B. Aprovar estrutura")
-
-                generate_presentation_btn = gr.Button("3. Gerar PowerPoint final", variant="primary")
+                regenerate_structure_btn = gr.Button("Regenerar estrutura")
+                approve_structure_btn = gr.Button("Aprovar estrutura")
 
             with gr.Column(scale=1):
                 status_output = gr.Textbox(label="Estado do processo", lines=3)
+                assistant_output = gr.Textbox(label="Mensagem do orquestrador", lines=4)
                 analysis_output = gr.Textbox(label="Análise conceptual", lines=14)
                 structure_output = gr.Textbox(label="Estrutura pedagógica", lines=14)
                 slides_output = gr.Textbox(label="Plano de slides", lines=14)
                 pptx_output = gr.File(label="PowerPoint gerado")
 
-        generate_analysis_btn.click(
-            fn=generate_analysis,
+        continue_btn.click(
+            fn=continue_with_orchestrator,
             inputs=[
+                app_state,
                 text_base,
                 title,
                 target_audience,
@@ -215,6 +260,7 @@ def build_interface():
             ],
             outputs=[
                 app_state,
+                assistant_output,
                 analysis_output,
                 structure_output,
                 slides_output,
@@ -228,6 +274,7 @@ def build_interface():
             inputs=[analysis_feedback, app_state],
             outputs=[
                 app_state,
+                assistant_output,
                 analysis_output,
                 structure_output,
                 slides_output,
@@ -239,19 +286,7 @@ def build_interface():
         approve_analysis_btn.click(
             fn=approve_analysis,
             inputs=[app_state],
-            outputs=[app_state, status_output],
-        )
-
-        generate_structure_btn.click(
-            fn=generate_structure,
-            inputs=[app_state],
-            outputs=[
-                app_state,
-                structure_output,
-                slides_output,
-                pptx_output,
-                status_output,
-            ],
+            outputs=[app_state, assistant_output, status_output],
         )
 
         regenerate_structure_btn.click(
@@ -259,6 +294,8 @@ def build_interface():
             inputs=[structure_feedback, app_state],
             outputs=[
                 app_state,
+                assistant_output,
+                analysis_output,
                 structure_output,
                 slides_output,
                 pptx_output,
@@ -269,18 +306,7 @@ def build_interface():
         approve_structure_btn.click(
             fn=approve_structure,
             inputs=[app_state],
-            outputs=[app_state, status_output],
-        )
-
-        generate_presentation_btn.click(
-            fn=generate_presentation,
-            inputs=[app_state],
-            outputs=[
-                app_state,
-                slides_output,
-                pptx_output,
-                status_output,
-            ],
+            outputs=[app_state, assistant_output, status_output],
         )
 
     return demo

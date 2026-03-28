@@ -8,6 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.agents.content_analyst import run_content_analyst
 from src.agents.multimedia_generator import run_multimedia_generator
+from src.agents.orchestrator import run_orchestrator
 from src.agents.pedagogical_designer import run_pedagogical_designer
 from src.config import OUTPUT_DIR
 from src.services.pptx_service import build_presentation
@@ -57,22 +58,48 @@ def export_pptx_step(state: PrototypeState) -> PrototypeState:
     updated["presentation_path"] = presentation_path
     updated["current_step"] = "export"
     updated["status"] = "completed"
+    updated["error_message"] = ""
     logger.info("Pipeline finished: %s", presentation_path)
     return updated
+
+
+def _route_from_orchestrator(state: PrototypeState):
+    next_action = state.get("next_action", "ask_user")
+
+    if next_action == "run_content_analysis":
+        return "content_analysis"
+    if next_action == "run_pedagogical_design":
+        return "pedagogical_design"
+    if next_action == "run_multimedia_generation":
+        return "multimedia_generation"
+    if next_action == "export_pptx":
+        return "export_pptx"
+
+    return END
 
 
 def build_graph():
     builder = StateGraph(PrototypeState)
 
-    builder.add_node("content_analysis", run_content_analyst)
-    builder.add_node("pedagogical_design", run_pedagogical_designer)
-    builder.add_node("multimedia_generation", run_multimedia_generator)
+    builder.add_node("orchestrator", run_orchestrator)
+    builder.add_node("content_analysis", run_analysis_step)
+    builder.add_node("pedagogical_design", run_structure_step)
+    builder.add_node("multimedia_generation", run_multimedia_step)
     builder.add_node("export_pptx", export_pptx_step)
 
-    builder.add_edge(START, "content_analysis")
-    builder.add_edge("content_analysis", "pedagogical_design")
-    builder.add_edge("pedagogical_design", "multimedia_generation")
-    builder.add_edge("multimedia_generation", "export_pptx")
+    builder.add_edge(START, "orchestrator")
+    builder.add_conditional_edges("orchestrator", _route_from_orchestrator)
+
+    builder.add_edge("content_analysis", "orchestrator")
+    builder.add_edge("pedagogical_design", "orchestrator")
+    builder.add_edge("multimedia_generation", "orchestrator")
     builder.add_edge("export_pptx", END)
 
     return builder.compile()
+
+
+GRAPH = build_graph()
+
+
+def run_orchestrated_cycle(state: PrototypeState) -> PrototypeState:
+    return GRAPH.invoke(state)

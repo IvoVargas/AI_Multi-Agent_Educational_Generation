@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, TypedDict
+from typing import Any, Dict, List, Literal, TypedDict
+
+
+class ConversationTurn(TypedDict):
+    role: Literal["user", "assistant"]
+    content: str
 
 
 class PrototypeState(TypedDict, total=False):
@@ -8,6 +13,12 @@ class PrototypeState(TypedDict, total=False):
 
     user_input: str
     metadata: Dict[str, Any]
+
+    conversation_history: List[ConversationTurn]
+    assistant_message: str
+    next_action: str
+    awaiting_user_input: bool
+    missing_fields: List[str]
 
     content_analysis: Dict[str, Any]
     analysis_approved: bool
@@ -48,6 +59,11 @@ def create_initial_state(
             "language": language.strip() or "pt-PT",
             "extra_instructions": extra_instructions.strip(),
         },
+        "conversation_history": [],
+        "assistant_message": "",
+        "next_action": "ask_user",
+        "awaiting_user_input": False,
+        "missing_fields": [],
         "content_analysis": {},
         "analysis_approved": False,
         "analysis_feedback": "",
