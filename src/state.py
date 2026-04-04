@@ -19,6 +19,7 @@ class PrototypeState(TypedDict, total=False):
     next_action: str
     awaiting_user_input: bool
     missing_fields: List[str]
+    last_user_message: str
 
     content_analysis: Dict[str, Any]
     analysis_approved: bool
@@ -64,6 +65,7 @@ def create_initial_state(
         "next_action": "ask_user",
         "awaiting_user_input": False,
         "missing_fields": [],
+        "last_user_message": "",
         "content_analysis": {},
         "analysis_approved": False,
         "analysis_feedback": "",
@@ -77,3 +79,16 @@ def create_initial_state(
         "status": "initialized",
         "error_message": "",
     }
+
+
+def create_chat_initial_state() -> PrototypeState:
+    return create_initial_state(
+        text_base="",
+        title="",
+        target_audience="",
+        education_level="",
+        presentation_goal="",
+        num_slides=6,
+        language="pt-PT",
+        extra_instructions="",
+    )

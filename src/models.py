@@ -88,3 +88,47 @@ class OrchestratorMessageModel(BaseModel):
 
     assistant_message: str = Field(min_length=5, max_length=600)
     tone: Literal["request_info", "inform", "approval", "completion"] = "inform"
+
+
+class ChatRequirementExtractionModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    user_intent: Literal[
+        "provide_requirements",
+        "approve_analysis",
+        "approve_structure",
+        "regenerate_analysis",
+        "regenerate_structure",
+        "continue",
+        "restart",
+        "unknown",
+    ] = "unknown"
+    title: Optional[str] = None
+    target_audience: Optional[str] = None
+    education_level: Optional[str] = None
+    presentation_goal: Optional[str] = None
+    num_slides: Optional[int] = Field(default=None, ge=1, le=100)
+    language: Optional[str] = None
+    extra_instructions: Optional[str] = None
+    text_base: Optional[str] = None
+    feedback: Optional[str] = None
+
+    @field_validator(
+        "title",
+        "target_audience",
+        "education_level",
+        "presentation_goal",
+        "language",
+        "extra_instructions",
+        "text_base",
+        "feedback",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_string(cls, value: object) -> Optional[str]:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned or None

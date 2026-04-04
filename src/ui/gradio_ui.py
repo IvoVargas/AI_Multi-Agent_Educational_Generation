@@ -1,434 +1,801 @@
 from __future__ import annotations
 
+from typing import Any, Dict, List, Tuple
+
 import gradio as gr
 
-from src.graph import run_analysis_step, run_orchestrated_cycle, run_structure_step
-from src.state import PrototypeState, create_initial_state
+from src.agents.chat_intake import extract_chat_update
+from src.graph import run_orchestrated_cycle
+from src.state import PrototypeState, create_chat_initial_state
 from src.utils.formatters import (
-    format_content_analysis,
-    format_orchestrator_message,
-    format_pedagogical_structure,
-    format_slide_plan,
-    format_status,
+    render_analysis_markdown,
+    render_analysis_preview_for_chat,
+    render_slide_plan_markdown,
+    render_slide_plan_preview_for_chat,
+    render_status_html,
+    render_structure_markdown,
+    render_structure_preview_for_chat,
 )
 
-SCROLLABLE_UI_CSS = """
+CHATBOT_HELP = """
+- *Quero uma apresentação sobre redes neuronais para licenciatura em engenharia informática, com 8 slides, em português de Portugal e foco introdutório.*
+- *Texto-base: os sistemas multiagente permitem dividir tarefas complexas por agentes especializados...*
+- *Aprovo a análise.*
+- *Reformula a estrutura e torna-a mais técnica.*
+- *Continua.*
+- *Reinicia.*
+"""
+
+APP_CSS = """
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden !important;
+    background: #0b1220;
+}
+
+body {
+    color: #e5e7eb;
+}
+
 .gradio-container {
-    background: linear-gradient(180deg, #0b1220 0%, #111827 100%);
+    background: #0b1220;
     color: #e5e7eb;
+    max-width: 100vw !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    padding: 12px 14px !important;
 }
 
-.gradio-container h1,
-.gradio-container h2,
-.gradio-container h3,
-.gradio-container p,
-.gradio-container label,
-.gradio-container .prose,
-.gradio-container .prose p,
-.gradio-container .prose li,
-.gradio-container .prose strong,
-.gradio-container .prose em {
-    color: #e5e7eb;
+.app-shell {
+    height: calc(94vh - 24px);
+    overflow: hidden;
+    gap: 10px;
 }
 
-.gradio-container .prose code,
-.gradio-container code {
-    background: #0f172a;
-    color: #cbd5e1;
-    border: 1px solid #334155;
-    border-radius: 6px;
-    padding: 0.1rem 0.35rem;
+.header-shell {
+    padding: 10px 14px;
+    background: linear-gradient(180deg, #0f172a 0%, #0b1220 100%);
+    border: 1px solid #1f2937;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }
 
-.panel-markdown {
-    background: #111827;
-    border: 1px solid #374151;
-    border-radius: 14px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    padding: 0.35rem 0.5rem;
-}
-
-.panel-markdown h1,
-.panel-markdown h2,
-.panel-markdown h3,
-.panel-markdown p,
-.panel-markdown ul,
-.panel-markdown ol,
-.panel-markdown li,
-.panel-markdown strong {
-    color: #e5e7eb;
-    margin-top: 0.55rem;
-    margin-bottom: 0.55rem;
-}
-
-textarea,
-input,
-select {
-    background: #0f172a !important;
+.header-shell h1,
+.header-shell p,
+label,
+legend {
     color: #e5e7eb !important;
-    border: 1px solid #374151 !important;
-    border-radius: 10px !important;
+    margin-top: 0 !important;
+    margin-bottom: 0.2rem !important;
 }
 
-textarea::placeholder,
-input::placeholder {
+.header-shell p {
     color: #94a3b8 !important;
 }
 
-.text-input textarea {
-    max-height: 260px;
+.content-shell {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden;
+    gap: 10px;
 }
 
-button {
-    border-radius: 10px !important;
-    border: 1px solid #475569 !important;
+.left-shell,
+.right-shell {
+    min-height: 0 !important;
+    height: 100%;
+    overflow: hidden;
+    gap: 10px;
+}
+
+.help-shell,
+.composer-shell,
+.file-shell,
+.panel-shell,
+.status-shell,
+#chatbot-panel {
+    background: #111827 !important;
+    border: 1px solid #243041 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.24);
+}
+
+.help-shell {
+    overflow: hidden;
+}
+
+.help-shell .label-wrap,
+.help-shell .accordion-header {
+    background: #111827 !important;
+}
+
+.help-shell .prose,
+.help-shell .md,
+.help-shell .markdown,
+.panel-shell > .prose,
+.panel-shell .prose,
+.panel-shell .wrap,
+.panel-shell .md,
+.panel-shell .markdown,
+.status-shell,
+.file-shell,
+#chatbot-panel .message,
+#chatbot-panel .message * {
+    color: #e5e7eb !important;
+}
+
+.panel-shell h1,
+.panel-shell h2,
+.panel-shell h3,
+.panel-shell h4,
+.panel-shell p,
+.panel-shell li,
+.panel-shell strong,
+.panel-shell code,
+.panel-shell em,
+.help-shell h1,
+.help-shell h2,
+.help-shell h3,
+.help-shell h4,
+.help-shell p,
+.help-shell li,
+.help-shell strong,
+.help-shell code,
+.help-shell em {
+    color: #e5e7eb !important;
+}
+
+#chatbot-panel {
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    overflow: hidden;
+}
+
+#chatbot-panel .wrap,
+#chatbot-panel .bubble-wrap,
+#chatbot-panel .message-wrap,
+#chatbot-panel .messages {
+    background: transparent !important;
+}
+
+#chatbot-panel .bubble-wrap {
+    padding-inline: 10px;
+}
+
+#chatbot-panel .message {
+    border-radius: 14px !important;
+}
+
+#chatbot-panel .message.user {
+    background: #1d4ed8 !important;
+    border-color: #2563eb !important;
+}
+
+#chatbot-panel .message.bot {
+    background: #0f172a !important;
+}
+
+.composer-shell {
+    padding: 10px;
+}
+
+.composer-row {
+    align-items: stretch;
+}
+
+.composer-input textarea,
+textarea,
+input {
+    background: #0f172a !important;
+    color: #e5e7eb !important;
+    border: 1px solid #243041 !important;
+}
+
+.composer-input textarea {
+    min-height: 78px !important;
 }
 
 button.primary,
-button[variant="primary"] {
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
-    color: #eff6ff !important;
-    border-color: #3b82f6 !important;
+.send-btn button {
+    background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%) !important;
+    border: none !important;
 }
 
-button.secondary {
+.send-btn button {
+    min-height: 78px;
+    border-radius: 14px !important;
+}
+
+.reset-btn button {
+    min-height: 42px;
+    border-radius: 14px !important;
     background: #1f2937 !important;
+    border: 1px solid #334155 !important;
     color: #e5e7eb !important;
 }
 
-.gradio-file,
-.file-preview,
-.file-wrap {
-    background: #111827 !important;
-    border: 1px solid #374151 !important;
+.tabs-shell {
+    height: 100%;
+    min-height: 0 !important;
+    overflow: hidden;
+}
+
+.tabs-shell .tab-nav {
+    gap: 6px;
+    background: transparent !important;
+    margin-bottom: 8px !important;
+}
+
+.tabs-shell button {
     border-radius: 12px !important;
+}
+
+.tabs-shell .tabitem {
+    height: calc(100vh - 182px);
+    min-height: 0 !important;
+    overflow: hidden;
+}
+
+.tabs-shell .tabitem > div {
+    height: 100%;
+    min-height: 0 !important;
+}
+
+.status-panel,
+.result-panel,
+.export-panel {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: auto !important;
+    padding: 6px;
+}
+
+.status-shell {
+    padding: 14px;
+}
+
+.export-panel {
+    padding: 14px;
+}
+
+.status-root {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.status-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.section-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #e5e7eb;
+}
+
+.progress-track {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+    overflow-x: hidden;
+    padding-bottom: 2px;
+}
+
+.progress-step {
+    min-width: 92px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.step-dot {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #94a3b8;
+}
+
+.step-label {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.progress-step.active .step-dot {
+    background: rgba(37, 99, 235, 0.16);
+    border-color: #3b82f6;
+    color: #dbeafe;
+}
+
+.progress-step.active .step-label {
+    color: #dbeafe;
+}
+
+.progress-step.complete .step-dot {
+    background: rgba(16, 185, 129, 0.16);
+    border-color: #10b981;
+    color: #d1fae5;
+}
+
+.progress-step.complete .step-label {
+    color: #d1fae5;
+}
+
+.progress-connector {
+    flex: 1 0 24px;
+    min-width: 24px;
+    height: 2px;
+    background: linear-gradient(90deg, #243041 0%, #334155 100%);
+    border-radius: 999px;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.status-card {
+    background: #0f172a;
+    border: 1px solid #243041;
+    border-radius: 14px;
+    padding: 12px;
+}
+
+.status-card.wide {
+    grid-column: 1 / -1;
+}
+
+.subtle-label {
+    font-size: 0.73rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 6px;
+}
+
+.big-value {
+    color: #e5e7eb;
+    font-size: 0.95rem;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.status-chip,
+.missing-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    padding: 7px 10px;
+    line-height: 1;
+}
+
+.status-chip {
+    background: #0f172a;
+    border: 1px solid #243041;
+}
+
+.status-chip.muted {
+    opacity: 0.72;
+}
+
+.chip-label {
+    color: #94a3b8;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.chip-value {
+    color: #e5e7eb;
+    font-size: 0.82rem;
+    font-weight: 600;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.missing-chip {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fcd34d;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.file-preview,
+.file-upload,
+[data-testid="file"] {
+    background: #111827 !important;
+    border: 1px solid #243041 !important;
     color: #e5e7eb !important;
+    border-radius: 14px !important;
+}
+
+@media (max-width: 1200px) {
+    html, body, .gradio-container {
+        overflow: auto !important;
+        height: auto !important;
+    }
+
+    .app-shell {
+        height: auto;
+    }
+
+    .content-shell,
+    .left-shell,
+    .right-shell,
+    .tabs-shell .tabitem {
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    #chatbot-panel {
+        min-height: 520px !important;
+    }
+
+    .status-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .status-card.wide {
+        grid-column: auto;
+    }
 }
 """
 
 
-def _status(message: str) -> str:
-    return format_status(message)
+TAB_STATUS = "status"
+TAB_ANALYSIS = "analysis"
+TAB_STRUCTURE = "structure"
+TAB_SLIDES = "slides"
+TAB_EXPORT = "export"
 
 
-
-def _build_or_reset_state(
-    text_base: str,
-    title: str,
-    target_audience: str,
-    education_level: str,
-    presentation_goal: str,
-    num_slides: int,
-    language: str,
-    extra_instructions: str,
-) -> PrototypeState:
-    return create_initial_state(
-        text_base=text_base,
-        title=title,
-        target_audience=target_audience,
-        education_level=education_level,
-        presentation_goal=presentation_goal,
-        num_slides=int(num_slides),
-        language=language,
-        extra_instructions=extra_instructions,
-    )
+def _append_turn(state: Dict[str, Any], role: str, content: str) -> None:
+    history = list(state.get("conversation_history", []))
+    history.append({"role": role, "content": content})
+    state["conversation_history"] = history
 
 
+def _merge_extracted_into_state(state: Dict[str, Any], extracted: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = dict(state.get("metadata", {}))
 
-def _sync_form_into_state(
-    app_state,
-    text_base,
-    title,
-    target_audience,
-    education_level,
-    presentation_goal,
-    num_slides,
-    language,
-    extra_instructions,
-):
-    if not app_state:
-        return _build_or_reset_state(
-            text_base,
-            title,
-            target_audience,
-            education_level,
-            presentation_goal,
-            num_slides,
-            language,
-            extra_instructions,
+    for field in ["title", "target_audience", "education_level", "presentation_goal", "language"]:
+        value = extracted.get(field)
+        if isinstance(value, str) and value.strip():
+            metadata[field] = value.strip()
+
+    num_slides = extracted.get("num_slides")
+    if isinstance(num_slides, int) and num_slides > 0:
+        metadata["num_slides"] = num_slides
+
+    extra_instructions = extracted.get("extra_instructions")
+    if isinstance(extra_instructions, str) and extra_instructions.strip():
+        existing = str(metadata.get("extra_instructions", "")).strip()
+        metadata["extra_instructions"] = (
+            f"{existing}\n{extra_instructions.strip()}" if existing else extra_instructions.strip()
         )
 
-    state = dict(app_state)
-    state["user_input"] = text_base.strip()
+    text_base = extracted.get("text_base")
+    if isinstance(text_base, str) and text_base.strip():
+        existing_text = state.get("user_input", "").strip()
+        if not existing_text:
+            state["user_input"] = text_base.strip()
+        elif text_base.strip().lower() not in existing_text.lower():
+            state["user_input"] = f"{existing_text}\n\n{text_base.strip()}"
 
-    metadata = dict(state.get("metadata", {}))
-    metadata.update(
-        {
-            "title": title.strip(),
-            "target_audience": target_audience.strip(),
-            "education_level": education_level.strip(),
-            "presentation_goal": presentation_goal.strip(),
-            "num_slides": int(num_slides),
-            "language": language.strip() or "pt-PT",
-            "extra_instructions": extra_instructions.strip(),
-        }
-    )
     state["metadata"] = metadata
     return state
 
 
+def _assistant_reply_from_state(
+    previous_state: Dict[str, Any],
+    current_state: Dict[str, Any],
+    fallback_message: str = "Estado atualizado.",
+) -> str:
+    parts: List[str] = []
 
-def _render_outputs(state: PrototypeState, presentation_path):
-    assistant_message = state.get("assistant_message", "")
-    status_message = assistant_message or f"Estado: {state.get('status', '')}"
+    assistant_message = current_state.get("assistant_message", "").strip()
+    parts.append(assistant_message or fallback_message)
 
+    if not previous_state.get("content_analysis") and current_state.get("content_analysis"):
+        preview = render_analysis_preview_for_chat(current_state.get("content_analysis", {}))
+        if preview:
+            parts.append(preview)
+
+    if not previous_state.get("pedagogical_structure") and current_state.get("pedagogical_structure"):
+        preview = render_structure_preview_for_chat(current_state.get("pedagogical_structure", {}))
+        if preview:
+            parts.append(preview)
+
+    if not previous_state.get("slide_plan") and current_state.get("slide_plan"):
+        preview = render_slide_plan_preview_for_chat(current_state.get("slide_plan", []))
+        if preview:
+            parts.append(preview)
+
+    if not previous_state.get("presentation_path") and current_state.get("presentation_path"):
+        parts.append("### Exportação concluída\nO ficheiro PowerPoint já está pronto para download no separador **Exportar**.")
+
+    return "\n\n".join(part for part in parts if part.strip())
+
+
+def _recommended_tab(previous_state: Dict[str, Any], current_state: Dict[str, Any]) -> str:
+    if not previous_state.get("presentation_path") and current_state.get("presentation_path"):
+        return TAB_EXPORT
+    if not previous_state.get("slide_plan") and current_state.get("slide_plan"):
+        return TAB_SLIDES
+    if not previous_state.get("pedagogical_structure") and current_state.get("pedagogical_structure"):
+        return TAB_STRUCTURE
+    if not previous_state.get("content_analysis") and current_state.get("content_analysis"):
+        return TAB_ANALYSIS
+
+    next_action = current_state.get("next_action", "")
+    if next_action == "wait_analysis_approval" and current_state.get("content_analysis"):
+        return TAB_ANALYSIS
+    if next_action == "wait_structure_approval" and current_state.get("pedagogical_structure"):
+        return TAB_STRUCTURE
+    if current_state.get("presentation_path"):
+        return TAB_EXPORT
+    if current_state.get("slide_plan"):
+        return TAB_SLIDES
+    return TAB_STATUS
+
+
+def _render_outputs(state: Dict[str, Any]):
+    presentation_path = state.get("presentation_path") or None
+    return (
+        render_analysis_markdown(state.get("content_analysis", {})),
+        render_structure_markdown(state.get("pedagogical_structure", {})),
+        render_slide_plan_markdown(state.get("slide_plan", [])),
+        presentation_path,
+        render_status_html(state),
+    )
+
+
+def _apply_chat_intent(state: Dict[str, Any], message: str, extracted: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+    previous_state = dict(state)
+    intent = extracted.get("user_intent", "unknown")
+    state["last_user_message"] = message.strip()
+
+    if intent == "restart":
+        new_state = create_chat_initial_state()
+        new_state["assistant_message"] = (
+            "Processo reiniciado. Diz-me o tema, o público-alvo, o nível de ensino, o objetivo e, se quiseres, o texto-base."
+        )
+        new_state["status"] = "initialized"
+        return new_state, new_state["assistant_message"]
+
+    state = _merge_extracted_into_state(state, extracted)
+
+    if intent == "approve_analysis":
+        if not state.get("content_analysis"):
+            state["assistant_message"] = "Ainda não existe uma análise conceptual para aprovar."
+            return state, state["assistant_message"]
+        state["analysis_approved"] = True
+        state = run_orchestrated_cycle(state)
+        return state, _assistant_reply_from_state(previous_state, state, "Análise aprovada.")
+
+    if intent == "approve_structure":
+        if not state.get("pedagogical_structure"):
+            state["assistant_message"] = "Ainda não existe uma estrutura pedagógica para aprovar."
+            return state, state["assistant_message"]
+        state["structure_approved"] = True
+        state = run_orchestrated_cycle(state)
+        return state, _assistant_reply_from_state(previous_state, state, "Estrutura aprovada.")
+
+    if intent in {"regenerate_analysis", "unknown", "provide_requirements"} and state.get("next_action") == "wait_analysis_approval":
+        feedback = extracted.get("feedback") or message.strip()
+        state["analysis_feedback"] = feedback
+        state["analysis_approved"] = False
+        state["content_analysis"] = {}
+        state["pedagogical_structure"] = {}
+        state["structure_approved"] = False
+        state["slide_plan"] = []
+        state["presentation_path"] = ""
+        state = run_orchestrated_cycle(state)
+        return state, _assistant_reply_from_state(previous_state, state, "Análise reformulada.")
+
+    if intent in {"regenerate_structure", "unknown", "provide_requirements"} and state.get("next_action") == "wait_structure_approval":
+        feedback = extracted.get("feedback") or message.strip()
+        state["structure_feedback"] = feedback
+        state["analysis_approved"] = True
+        state["structure_approved"] = False
+        state["pedagogical_structure"] = {}
+        state["slide_plan"] = []
+        state["presentation_path"] = ""
+        state = run_orchestrated_cycle(state)
+        return state, _assistant_reply_from_state(previous_state, state, "Estrutura reformulada.")
+
+    if intent in {"continue", "provide_requirements", "unknown"}:
+        state = run_orchestrated_cycle(state)
+        return state, _assistant_reply_from_state(previous_state, state, "Estado atualizado.")
+
+    state["assistant_message"] = "Não consegui interpretar totalmente a tua mensagem, mas atualizei o estado com o que foi possível."
+    return state, state["assistant_message"]
+
+
+def handle_chat_message(app_state, chat_history, user_message):
+    message = (user_message or "").strip()
+    if not message:
+        current_state = app_state or create_chat_initial_state()
+        analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(current_state)
+        return (
+            app_state,
+            chat_history,
+            analysis_md,
+            structure_md,
+            slides_md,
+            file_output,
+            status_html,
+            gr.Tabs(selected=TAB_STATUS),
+            "",
+        )
+
+    state: PrototypeState = dict(app_state) if app_state else create_chat_initial_state()
+    history = list(chat_history or [])
+    previous_state = dict(state)
+
+    _append_turn(state, "user", message)
+    history.append({"role": "user", "content": message})
+
+    extracted = extract_chat_update(message, state)
+    state, assistant_reply = _apply_chat_intent(state, message, extracted)
+
+    _append_turn(state, "assistant", assistant_reply)
+    history.append({"role": "assistant", "content": assistant_reply})
+
+    analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
+    selected_tab = _recommended_tab(previous_state, state)
     return (
         state,
-        format_orchestrator_message(assistant_message),
-        format_content_analysis(state.get("content_analysis", {})),
-        format_pedagogical_structure(state.get("pedagogical_structure", {})),
-        format_slide_plan(state.get("slide_plan", [])),
-        presentation_path,
-        _status(status_message),
+        history,
+        analysis_md,
+        structure_md,
+        slides_md,
+        file_output,
+        status_html,
+        gr.Tabs(selected=selected_tab),
+        "",
     )
 
 
-
-def continue_with_orchestrator(
-    app_state,
-    text_base,
-    title,
-    target_audience,
-    education_level,
-    presentation_goal,
-    num_slides,
-    language,
-    extra_instructions,
-):
-    state = _sync_form_into_state(
-        app_state,
-        text_base,
-        title,
-        target_audience,
-        education_level,
-        presentation_goal,
-        num_slides,
-        language,
-        extra_instructions,
+def reset_chat():
+    state = create_chat_initial_state()
+    analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
+    return (
+        state,
+        [],
+        analysis_md,
+        structure_md,
+        slides_md,
+        file_output,
+        status_html,
+        gr.Tabs(selected=TAB_STATUS),
+        "",
     )
-
-    state = run_orchestrated_cycle(state)
-    presentation_path = state.get("presentation_path") or None
-    return _render_outputs(state, presentation_path)
-
-
-
-def regenerate_analysis(feedback, app_state):
-    if not app_state:
-        raise gr.Error("Gera primeiro a análise conceptual.")
-
-    state = dict(app_state)
-    state["analysis_feedback"] = feedback.strip()
-    state["analysis_approved"] = False
-    state["pedagogical_structure"] = {}
-    state["structure_approved"] = False
-    state["slide_plan"] = []
-    state["presentation_path"] = ""
-
-    state = run_analysis_step(state)
-
-    assistant_message = "Análise conceptual regenerada com base no feedback. Revê e aprova ou volta a reformular."
-    state["assistant_message"] = assistant_message
-    state["next_action"] = "wait_analysis_approval"
-    state["awaiting_user_input"] = True
-    state["status"] = "awaiting_input"
-
-    return _render_outputs(state, None)
-
-
-
-def approve_analysis(app_state):
-    if not app_state or not app_state.get("content_analysis"):
-        raise gr.Error("Não existe análise para aprovar.")
-
-    state = dict(app_state)
-    state["analysis_approved"] = True
-    state["assistant_message"] = "Análise aprovada. Carrega em 'Iniciar / Continuar com orquestrador' para gerar a estrutura pedagógica."
-    state["next_action"] = "run_pedagogical_design"
-    state["awaiting_user_input"] = False
-    state["status"] = "ready_to_continue"
-
-    return state, format_orchestrator_message(state["assistant_message"]), _status(state["assistant_message"])
-
-
-
-def regenerate_structure(feedback, app_state):
-    if not app_state or not app_state.get("content_analysis"):
-        raise gr.Error("Gera primeiro a estrutura pedagógica.")
-
-    state = dict(app_state)
-    state["structure_feedback"] = feedback.strip()
-    state["structure_approved"] = False
-    state["slide_plan"] = []
-    state["presentation_path"] = ""
-
-    state = run_structure_step(state)
-
-    assistant_message = "Estrutura pedagógica regenerada com base no feedback. Revê e aprova ou volta a reformular."
-    state["assistant_message"] = assistant_message
-    state["next_action"] = "wait_structure_approval"
-    state["awaiting_user_input"] = True
-    state["status"] = "awaiting_input"
-
-    return _render_outputs(state, None)
-
-
-
-def approve_structure(app_state):
-    if not app_state or not app_state.get("pedagogical_structure"):
-        raise gr.Error("Não existe estrutura para aprovar.")
-
-    state = dict(app_state)
-    state["structure_approved"] = True
-    state["assistant_message"] = "Estrutura aprovada. Carrega em 'Iniciar / Continuar com orquestrador' para gerar o PowerPoint final."
-    state["next_action"] = "run_multimedia_generation"
-    state["awaiting_user_input"] = False
-    state["status"] = "ready_to_continue"
-
-    return state, format_orchestrator_message(state["assistant_message"]), _status(state["assistant_message"])
-
 
 
 def build_interface():
-    with gr.Blocks(title="AI Multi-Agent Educational Generation", css=SCROLLABLE_UI_CSS) as demo:
-        app_state = gr.State({})
+    with gr.Blocks(title="AI Multi-Agent Educational Generation") as demo:
+        app_state = gr.State(create_chat_initial_state())
 
-        gr.Markdown("# AI Multi-Agent Educational Generation")
-        gr.Markdown(
-            "Protótipo com agente LLM orquestrador, agentes especializados e validação humana em duas etapas."
+        with gr.Column(elem_classes=["app-shell"]):
+            with gr.Column(elem_classes=["header-shell"]):
+                gr.Markdown("# AI Multi-Agent Educational Generation")
+                gr.Markdown(
+                    "Protótipo com interação totalmente por chat: recolha de requisitos, aprovação e reformulação em linguagem natural."
+                )
+
+            with gr.Row(elem_classes=["content-shell"], equal_height=True):
+                with gr.Column(scale=8, elem_classes=["left-shell"]):
+                    with gr.Accordion("Exemplos de mensagens", open=False, elem_classes=["help-shell"]):
+                        gr.Markdown(CHATBOT_HELP)
+
+                    chatbot = gr.Chatbot(
+                        label="Conversa com o orquestrador",
+                        height=430,
+                        elem_id="chatbot-panel",
+                    )
+
+                    with gr.Column(elem_classes=["composer-shell"]):
+                        with gr.Row(elem_classes=["composer-row"]):
+                            chat_input = gr.Textbox(
+                                label="Mensagem",
+                                placeholder="Escreve aqui o tema, requisitos, feedback ou aprovação...",
+                                lines=4,
+                                scale=8,
+                                elem_classes=["composer-input"],
+                            )
+                            send_btn = gr.Button("Enviar", variant="primary", scale=1, elem_classes=["send-btn"])
+                        reset_btn = gr.Button("Reiniciar conversa", elem_classes=["reset-btn"])
+
+                with gr.Column(scale=5, elem_classes=["right-shell"]):
+                    with gr.Tabs(selected=TAB_STATUS, elem_classes=["tabs-shell"]) as result_tabs:
+                        with gr.Tab("Estado", id=TAB_STATUS):
+                            status_output = gr.HTML(
+                                render_status_html(create_chat_initial_state()),
+                                elem_classes=["status-shell", "status-panel"],
+                                height=690,
+                            )
+                        with gr.Tab("Análise", id=TAB_ANALYSIS):
+                            analysis_output = gr.Markdown(
+                                render_analysis_markdown({}),
+                                elem_classes=["panel-shell", "result-panel"],
+                                height=690,
+                            )
+                        with gr.Tab("Estrutura", id=TAB_STRUCTURE):
+                            structure_output = gr.Markdown(
+                                render_structure_markdown({}),
+                                elem_classes=["panel-shell", "result-panel"],
+                                height=690,
+                            )
+                        with gr.Tab("Slides", id=TAB_SLIDES):
+                            slides_output = gr.Markdown(
+                                render_slide_plan_markdown([]),
+                                elem_classes=["panel-shell", "result-panel"],
+                                height=690,
+                            )
+                        with gr.Tab("Exportar", id=TAB_EXPORT):
+                            with gr.Column(elem_classes=["file-shell", "export-panel"]):
+                                gr.Markdown(
+                                    "## Exportação\n\nQuando a apresentação estiver pronta, o ficheiro aparecerá aqui para download."
+                                )
+                                pptx_output = gr.File(label="PowerPoint gerado")
+
+        outputs = [
+            app_state,
+            chatbot,
+            analysis_output,
+            structure_output,
+            slides_output,
+            pptx_output,
+            status_output,
+            result_tabs,
+            chat_input,
+        ]
+
+        send_btn.click(
+            fn=handle_chat_message,
+            inputs=[app_state, chatbot, chat_input],
+            outputs=outputs,
         )
 
-        with gr.Row():
-            with gr.Column(scale=1):
-                text_base = gr.Textbox(label="Texto-base", lines=12, elem_classes=["text-input"])
-                title = gr.Textbox(label="Título da apresentação")
-                target_audience = gr.Textbox(label="Público-alvo")
-                education_level = gr.Textbox(label="Nível de ensino")
-                presentation_goal = gr.Textbox(label="Objetivo da apresentação")
-                num_slides = gr.Number(label="Número aproximado de slides", value=6, precision=0)
-                language = gr.Textbox(label="Idioma", value="pt-PT")
-                extra_instructions = gr.Textbox(label="Instruções adicionais", lines=4)
-
-                continue_btn = gr.Button("Iniciar / Continuar com orquestrador", variant="primary")
-
-                analysis_feedback = gr.Textbox(label="Feedback para reformular a análise", lines=3)
-                regenerate_analysis_btn = gr.Button("Regenerar análise")
-                approve_analysis_btn = gr.Button("Aprovar análise")
-
-                structure_feedback = gr.Textbox(label="Feedback para reformular a estrutura", lines=3)
-                regenerate_structure_btn = gr.Button("Regenerar estrutura")
-                approve_structure_btn = gr.Button("Aprovar estrutura")
-
-            with gr.Column(scale=1):
-                status_output = gr.Markdown(
-                    value=format_status("À espera de ação do utilizador."),
-                    elem_classes=["panel-markdown"],
-                    height=120,
-                    min_height=100,
-                    padding=True,
-                )
-                assistant_output = gr.Markdown(
-                    value=format_orchestrator_message("Ainda sem mensagens do orquestrador."),
-                    elem_classes=["panel-markdown"],
-                    height=140,
-                    min_height=120,
-                    padding=True,
-                )
-                analysis_output = gr.Markdown(
-                    value=format_content_analysis({}),
-                    elem_classes=["panel-markdown"],
-                    height=280,
-                    min_height=160,
-                    padding=True,
-                )
-                structure_output = gr.Markdown(
-                    value=format_pedagogical_structure({}),
-                    elem_classes=["panel-markdown"],
-                    height=280,
-                    min_height=160,
-                    padding=True,
-                )
-                slides_output = gr.Markdown(
-                    value=format_slide_plan([]),
-                    elem_classes=["panel-markdown"],
-                    height=280,
-                    min_height=160,
-                    padding=True,
-                )
-                pptx_output = gr.File(label="PowerPoint gerado")
-
-        continue_btn.click(
-            fn=continue_with_orchestrator,
-            inputs=[
-                app_state,
-                text_base,
-                title,
-                target_audience,
-                education_level,
-                presentation_goal,
-                num_slides,
-                language,
-                extra_instructions,
-            ],
-            outputs=[
-                app_state,
-                assistant_output,
-                analysis_output,
-                structure_output,
-                slides_output,
-                pptx_output,
-                status_output,
-            ],
+        chat_input.submit(
+            fn=handle_chat_message,
+            inputs=[app_state, chatbot, chat_input],
+            outputs=outputs,
         )
 
-        regenerate_analysis_btn.click(
-            fn=regenerate_analysis,
-            inputs=[analysis_feedback, app_state],
-            outputs=[
-                app_state,
-                assistant_output,
-                analysis_output,
-                structure_output,
-                slides_output,
-                pptx_output,
-                status_output,
-            ],
-        )
-
-        approve_analysis_btn.click(
-            fn=approve_analysis,
-            inputs=[app_state],
-            outputs=[app_state, assistant_output, status_output],
-        )
-
-        regenerate_structure_btn.click(
-            fn=regenerate_structure,
-            inputs=[structure_feedback, app_state],
-            outputs=[
-                app_state,
-                assistant_output,
-                analysis_output,
-                structure_output,
-                slides_output,
-                pptx_output,
-                status_output,
-            ],
-        )
-
-        approve_structure_btn.click(
-            fn=approve_structure,
-            inputs=[app_state],
-            outputs=[app_state, assistant_output, status_output],
+        reset_btn.click(
+            fn=reset_chat,
+            inputs=[],
+            outputs=outputs,
         )
 
     return demo
