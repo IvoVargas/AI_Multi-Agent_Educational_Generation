@@ -1,19 +1,115 @@
 from __future__ import annotations
 
-import json
-
 import gradio as gr
 
 from src.graph import run_analysis_step, run_orchestrated_cycle, run_structure_step
 from src.state import PrototypeState, create_initial_state
+from src.utils.formatters import (
+    format_content_analysis,
+    format_orchestrator_message,
+    format_pedagogical_structure,
+    format_slide_plan,
+    format_status,
+)
 
+SCROLLABLE_UI_CSS = """
+.gradio-container {
+    background: linear-gradient(180deg, #0b1220 0%, #111827 100%);
+    color: #e5e7eb;
+}
 
-def _pretty(data) -> str:
-    return json.dumps(data, ensure_ascii=False, indent=2)
+.gradio-container h1,
+.gradio-container h2,
+.gradio-container h3,
+.gradio-container p,
+.gradio-container label,
+.gradio-container .prose,
+.gradio-container .prose p,
+.gradio-container .prose li,
+.gradio-container .prose strong,
+.gradio-container .prose em {
+    color: #e5e7eb;
+}
+
+.gradio-container .prose code,
+.gradio-container code {
+    background: #0f172a;
+    color: #cbd5e1;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 0.1rem 0.35rem;
+}
+
+.panel-markdown {
+    background: #111827;
+    border: 1px solid #374151;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    padding: 0.35rem 0.5rem;
+}
+
+.panel-markdown h1,
+.panel-markdown h2,
+.panel-markdown h3,
+.panel-markdown p,
+.panel-markdown ul,
+.panel-markdown ol,
+.panel-markdown li,
+.panel-markdown strong {
+    color: #e5e7eb;
+    margin-top: 0.55rem;
+    margin-bottom: 0.55rem;
+}
+
+textarea,
+input,
+select {
+    background: #0f172a !important;
+    color: #e5e7eb !important;
+    border: 1px solid #374151 !important;
+    border-radius: 10px !important;
+}
+
+textarea::placeholder,
+input::placeholder {
+    color: #94a3b8 !important;
+}
+
+.text-input textarea {
+    max-height: 260px;
+}
+
+button {
+    border-radius: 10px !important;
+    border: 1px solid #475569 !important;
+}
+
+button.primary,
+button[variant="primary"] {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: #eff6ff !important;
+    border-color: #3b82f6 !important;
+}
+
+button.secondary {
+    background: #1f2937 !important;
+    color: #e5e7eb !important;
+}
+
+.gradio-file,
+.file-preview,
+.file-wrap {
+    background: #111827 !important;
+    border: 1px solid #374151 !important;
+    border-radius: 12px !important;
+    color: #e5e7eb !important;
+}
+"""
 
 
 def _status(message: str) -> str:
-    return message
+    return format_status(message)
+
 
 
 def _build_or_reset_state(
@@ -36,6 +132,7 @@ def _build_or_reset_state(
         language=language,
         extra_instructions=extra_instructions,
     )
+
 
 
 def _sync_form_into_state(
@@ -80,6 +177,23 @@ def _sync_form_into_state(
     return state
 
 
+
+def _render_outputs(state: PrototypeState, presentation_path):
+    assistant_message = state.get("assistant_message", "")
+    status_message = assistant_message or f"Estado: {state.get('status', '')}"
+
+    return (
+        state,
+        format_orchestrator_message(assistant_message),
+        format_content_analysis(state.get("content_analysis", {})),
+        format_pedagogical_structure(state.get("pedagogical_structure", {})),
+        format_slide_plan(state.get("slide_plan", [])),
+        presentation_path,
+        _status(status_message),
+    )
+
+
+
 def continue_with_orchestrator(
     app_state,
     text_base,
@@ -104,19 +218,9 @@ def continue_with_orchestrator(
     )
 
     state = run_orchestrated_cycle(state)
-
     presentation_path = state.get("presentation_path") or None
-    status_message = state.get("assistant_message") or f"Estado: {state.get('status', '')}"
+    return _render_outputs(state, presentation_path)
 
-    return (
-        state,
-        state.get("assistant_message", ""),
-        _pretty(state.get("content_analysis", {})),
-        _pretty(state.get("pedagogical_structure", {})),
-        _pretty(state.get("slide_plan", [])),
-        presentation_path,
-        _status(status_message),
-    )
 
 
 def regenerate_analysis(feedback, app_state):
@@ -139,15 +243,8 @@ def regenerate_analysis(feedback, app_state):
     state["awaiting_user_input"] = True
     state["status"] = "awaiting_input"
 
-    return (
-        state,
-        assistant_message,
-        _pretty(state.get("content_analysis", {})),
-        _pretty(state.get("pedagogical_structure", {})),
-        _pretty(state.get("slide_plan", [])),
-        None,
-        _status(assistant_message),
-    )
+    return _render_outputs(state, None)
+
 
 
 def approve_analysis(app_state):
@@ -161,7 +258,8 @@ def approve_analysis(app_state):
     state["awaiting_user_input"] = False
     state["status"] = "ready_to_continue"
 
-    return state, state["assistant_message"], _status(state["assistant_message"])
+    return state, format_orchestrator_message(state["assistant_message"]), _status(state["assistant_message"])
+
 
 
 def regenerate_structure(feedback, app_state):
@@ -182,15 +280,8 @@ def regenerate_structure(feedback, app_state):
     state["awaiting_user_input"] = True
     state["status"] = "awaiting_input"
 
-    return (
-        state,
-        assistant_message,
-        _pretty(state.get("content_analysis", {})),
-        _pretty(state.get("pedagogical_structure", {})),
-        _pretty(state.get("slide_plan", [])),
-        None,
-        _status(assistant_message),
-    )
+    return _render_outputs(state, None)
+
 
 
 def approve_structure(app_state):
@@ -204,11 +295,12 @@ def approve_structure(app_state):
     state["awaiting_user_input"] = False
     state["status"] = "ready_to_continue"
 
-    return state, state["assistant_message"], _status(state["assistant_message"])
+    return state, format_orchestrator_message(state["assistant_message"]), _status(state["assistant_message"])
+
 
 
 def build_interface():
-    with gr.Blocks(title="AI Multi-Agent Educational Generation") as demo:
+    with gr.Blocks(title="AI Multi-Agent Educational Generation", css=SCROLLABLE_UI_CSS) as demo:
         app_state = gr.State({})
 
         gr.Markdown("# AI Multi-Agent Educational Generation")
@@ -218,7 +310,7 @@ def build_interface():
 
         with gr.Row():
             with gr.Column(scale=1):
-                text_base = gr.Textbox(label="Texto-base", lines=12)
+                text_base = gr.Textbox(label="Texto-base", lines=12, elem_classes=["text-input"])
                 title = gr.Textbox(label="Título da apresentação")
                 target_audience = gr.Textbox(label="Público-alvo")
                 education_level = gr.Textbox(label="Nível de ensino")
@@ -238,11 +330,41 @@ def build_interface():
                 approve_structure_btn = gr.Button("Aprovar estrutura")
 
             with gr.Column(scale=1):
-                status_output = gr.Textbox(label="Estado do processo", lines=3)
-                assistant_output = gr.Textbox(label="Mensagem do orquestrador", lines=4)
-                analysis_output = gr.Textbox(label="Análise conceptual", lines=14)
-                structure_output = gr.Textbox(label="Estrutura pedagógica", lines=14)
-                slides_output = gr.Textbox(label="Plano de slides", lines=14)
+                status_output = gr.Markdown(
+                    value=format_status("À espera de ação do utilizador."),
+                    elem_classes=["panel-markdown"],
+                    height=120,
+                    min_height=100,
+                    padding=True,
+                )
+                assistant_output = gr.Markdown(
+                    value=format_orchestrator_message("Ainda sem mensagens do orquestrador."),
+                    elem_classes=["panel-markdown"],
+                    height=140,
+                    min_height=120,
+                    padding=True,
+                )
+                analysis_output = gr.Markdown(
+                    value=format_content_analysis({}),
+                    elem_classes=["panel-markdown"],
+                    height=280,
+                    min_height=160,
+                    padding=True,
+                )
+                structure_output = gr.Markdown(
+                    value=format_pedagogical_structure({}),
+                    elem_classes=["panel-markdown"],
+                    height=280,
+                    min_height=160,
+                    padding=True,
+                )
+                slides_output = gr.Markdown(
+                    value=format_slide_plan([]),
+                    elem_classes=["panel-markdown"],
+                    height=280,
+                    min_height=160,
+                    padding=True,
+                )
                 pptx_output = gr.File(label="PowerPoint gerado")
 
         continue_btn.click(
