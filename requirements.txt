@@ -6,3 +6,5 @@ python-dotenv
 pydantic>=2
 openai
 Pillow
+pypdf
+python-docx

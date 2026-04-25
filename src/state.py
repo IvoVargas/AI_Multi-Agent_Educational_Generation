@@ -21,6 +21,11 @@ class PrototypeState(TypedDict, total=False):
     missing_fields: List[str]
     last_user_message: str
 
+    uploaded_files: List[Dict[str, Any]]
+    knowledge_chunks: List[Dict[str, Any]]
+    retrieval_enabled: bool
+    source_summary: str
+
     content_analysis: Dict[str, Any]
     analysis_approved: bool
     analysis_feedback: str
@@ -66,6 +71,10 @@ def create_initial_state(
         "awaiting_user_input": False,
         "missing_fields": [],
         "last_user_message": "",
+        "uploaded_files": [],
+        "knowledge_chunks": [],
+        "retrieval_enabled": False,
+        "source_summary": "Sem ficheiros anexados.",
         "content_analysis": {},
         "analysis_approved": False,
         "analysis_feedback": "",

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+import json
+
 import gradio as gr
 
 from src.agents.chat_intake import extract_chat_update
+from src.agents.file_intake import add_uploaded_files_to_state
 from src.graph import run_orchestrated_cycle
 from src.state import PrototypeState, create_chat_initial_state
 from src.utils.formatters import (
@@ -22,6 +25,7 @@ CHATBOT_HELP = """
 - *Texto-base: os sistemas multiagente permitem dividir tarefas complexas por agentes especializados...*
 - *Aprovo a análise.*
 - *Reformula a estrutura e torna-a mais técnica.*
+- *Anexa um PDF com os requisitos ou documentos de apoio e diz-me se devo tratá-los como brief, apoio, template ou assets visuais.*
 - *Continua.*
 - *Reinicia.*
 """
@@ -187,7 +191,8 @@ legend {
 
 .composer-input textarea,
 textarea,
-input {
+input,
+select {
     background: #0f172a !important;
     color: #e5e7eb !important;
     border: 1px solid #243041 !important;
@@ -195,6 +200,17 @@ input {
 
 .composer-input textarea {
     min-height: 78px !important;
+}
+
+.attachment-controls {
+    margin-top: 10px;
+    align-items: end;
+}
+
+.attachment-controls .wrap,
+.attachment-controls .block,
+.attachment-role {
+    min-height: 0 !important;
 }
 
 button.primary,
@@ -402,6 +418,11 @@ button.primary,
     opacity: 0.72;
 }
 
+.source-chip {
+    background: rgba(37, 99, 235, 0.12);
+    border-color: rgba(59, 130, 246, 0.35);
+}
+
 .chip-label {
     color: #94a3b8;
     font-size: 0.72rem;
@@ -426,6 +447,31 @@ button.primary,
     color: #fcd34d;
     font-size: 0.8rem;
     font-weight: 600;
+}
+
+.source-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.source-item {
+    padding: 10px 12px;
+    background: #0f172a;
+    border: 1px solid #243041;
+    border-radius: 12px;
+}
+
+.source-name {
+    color: #e5e7eb;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.source-meta {
+    color: #94a3b8;
+    font-size: 0.8rem;
+    margin-top: 3px;
 }
 
 .file-preview,
@@ -469,7 +515,6 @@ button.primary,
 }
 """
 
-
 TAB_STATUS = "status"
 TAB_ANALYSIS = "analysis"
 TAB_STRUCTURE = "structure"
@@ -481,6 +526,16 @@ def _append_turn(state: Dict[str, Any], role: str, content: str) -> None:
     history = list(state.get("conversation_history", []))
     history.append({"role": role, "content": content})
     state["conversation_history"] = history
+
+
+def _normalize_uploaded_files(uploaded_files: Any) -> List[str]:
+    if not uploaded_files:
+        return []
+    if isinstance(uploaded_files, str):
+        return [uploaded_files]
+    if isinstance(uploaded_files, list):
+        return [item for item in uploaded_files if isinstance(item, str) and item.strip()]
+    return []
 
 
 def _merge_extracted_into_state(state: Dict[str, Any], extracted: Dict[str, Any]) -> Dict[str, Any]:
@@ -545,35 +600,26 @@ def _assistant_reply_from_state(
     return "\n\n".join(part for part in parts if part.strip())
 
 
-def _recommended_tab(previous_state: Dict[str, Any], current_state: Dict[str, Any]) -> str:
-    if not previous_state.get("presentation_path") and current_state.get("presentation_path"):
-        return TAB_EXPORT
-    if not previous_state.get("slide_plan") and current_state.get("slide_plan"):
-        return TAB_SLIDES
-    if not previous_state.get("pedagogical_structure") and current_state.get("pedagogical_structure"):
-        return TAB_STRUCTURE
-    if not previous_state.get("content_analysis") and current_state.get("content_analysis"):
-        return TAB_ANALYSIS
-
-    next_action = current_state.get("next_action", "")
-    if next_action == "wait_analysis_approval" and current_state.get("content_analysis"):
-        return TAB_ANALYSIS
-    if next_action == "wait_structure_approval" and current_state.get("pedagogical_structure"):
-        return TAB_STRUCTURE
-    if current_state.get("presentation_path"):
-        return TAB_EXPORT
-    if current_state.get("slide_plan"):
-        return TAB_SLIDES
-    return TAB_STATUS
+def _recommended_tab_name(state: Dict[str, Any]) -> str:
+    if state.get("presentation_path"):
+        return "Exportar"
+    if state.get("slide_plan"):
+        return "Slides"
+    if state.get("pedagogical_structure"):
+        return "Estrutura"
+    if state.get("content_analysis"):
+        return "Análise"
+    return "Estado"
 
 
 def _render_outputs(state: Dict[str, Any]):
     presentation_path = state.get("presentation_path") or None
+    file_update = gr.update(value=presentation_path) if presentation_path else gr.update()
     return (
         render_analysis_markdown(state.get("content_analysis", {})),
         render_structure_markdown(state.get("pedagogical_structure", {})),
         render_slide_plan_markdown(state.get("slide_plan", [])),
-        presentation_path,
+        file_update,
         render_status_html(state),
     )
 
@@ -586,7 +632,7 @@ def _apply_chat_intent(state: Dict[str, Any], message: str, extracted: Dict[str,
     if intent == "restart":
         new_state = create_chat_initial_state()
         new_state["assistant_message"] = (
-            "Processo reiniciado. Diz-me o tema, o público-alvo, o nível de ensino, o objetivo e, se quiseres, o texto-base."
+            "Processo reiniciado. Diz-me o tema, o público-alvo, o nível de ensino, o objetivo e, se quiseres, o texto-base ou ficheiros de apoio."
         )
         new_state["status"] = "initialized"
         return new_state, new_state["assistant_message"]
@@ -640,38 +686,54 @@ def _apply_chat_intent(state: Dict[str, Any], message: str, extracted: Dict[str,
     return state, state["assistant_message"]
 
 
-def handle_chat_message(app_state, chat_history, user_message):
+def handle_chat_message(app_state, chat_history, user_message, uploaded_files, upload_role):
     message = (user_message or "").strip()
-    if not message:
-        current_state = app_state or create_chat_initial_state()
-        analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(current_state)
+    file_paths = _normalize_uploaded_files(uploaded_files)
+    state: PrototypeState = dict(app_state) if app_state else create_chat_initial_state()
+    history = list(chat_history or [])
+    previous_state = dict(state)
+
+    if not message and not file_paths:
+        analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
         return (
-            app_state,
-            chat_history,
+            state,
+            history,
             analysis_md,
             structure_md,
             slides_md,
             file_output,
             status_html,
-            gr.Tabs(selected=TAB_STATUS),
+            gr.update(),
+            gr.update(value=""),
+            gr.update(value=[]),
             "",
         )
 
-    state: PrototypeState = dict(app_state) if app_state else create_chat_initial_state()
-    history = list(chat_history or [])
-    previous_state = dict(state)
+    file_notes: List[str] = []
+    if file_paths:
+        state, file_notes = add_uploaded_files_to_state(state, file_paths, selected_role=upload_role)
 
-    _append_turn(state, "user", message)
-    history.append({"role": "user", "content": message})
+    if message:
+        _append_turn(state, "user", message)
+        history.append({"role": "user", "content": message})
+        extracted = extract_chat_update(message, state)
+        state, assistant_reply = _apply_chat_intent(state, message, extracted)
+    else:
+        state = run_orchestrated_cycle(state)
+        assistant_reply = _assistant_reply_from_state(previous_state, state, "Ficheiros processados.")
 
-    extracted = extract_chat_update(message, state)
-    state, assistant_reply = _apply_chat_intent(state, message, extracted)
+    if file_notes:
+        assistant_reply = "### Ficheiros processados\n" + "\n".join(file_notes) + ("\n\n" + assistant_reply if assistant_reply else "")
 
     _append_turn(state, "assistant", assistant_reply)
     history.append({"role": "assistant", "content": assistant_reply})
 
     analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
-    selected_tab = _recommended_tab(previous_state, state)
+
+    # === SAFE AUTOMATIC TAB SWITCH ===
+    tab_name = _recommended_tab_name(state)
+    js_code = f"window.switchToTab('{tab_name}');" if tab_name != "Estado" else ""
+
     return (
         state,
         history,
@@ -680,8 +742,10 @@ def handle_chat_message(app_state, chat_history, user_message):
         slides_md,
         file_output,
         status_html,
-        gr.Tabs(selected=selected_tab),
-        "",
+        gr.update(),           # Never change tab in the main event (fixes "processing" stuck)
+        gr.update(value=""),
+        gr.update(value=[]),
+        js_code,
     )
 
 
@@ -696,7 +760,9 @@ def reset_chat():
         slides_md,
         file_output,
         status_html,
-        gr.Tabs(selected=TAB_STATUS),
+        gr.update(selected=TAB_STATUS),
+        gr.update(value=""),
+        gr.update(value=[]),
         "",
     )
 
@@ -705,11 +771,37 @@ def build_interface():
     with gr.Blocks(title="AI Multi-Agent Educational Generation") as demo:
         app_state = gr.State(create_chat_initial_state())
 
+        # Hidden component to trigger JavaScript safely
+        js_trigger = gr.Textbox(visible=False, elem_id="js_trigger")
+
+        # Reliable JavaScript for automatic tab switching (after response is ready)
+        demo.load(
+            fn=None,
+            js="""
+            () => {
+                window.switchToTab = function(tabName) {
+                    console.log('[AutoTab] Trying to switch to: ' + tabName);
+                    setTimeout(() => {
+                        const tabs = document.querySelectorAll('.tabs-shell button');
+                        for (let tab of tabs) {
+                            if (tab.textContent.trim() === tabName) {
+                                console.log('[AutoTab] ✓ Clicking tab: ' + tabName);
+                                tab.click();
+                                return;
+                            }
+                        }
+                        console.log('[AutoTab] ✗ Tab not found: ' + tabName);
+                    }, 250);
+                };
+            }
+            """
+        )
+
         with gr.Column(elem_classes=["app-shell"]):
             with gr.Column(elem_classes=["header-shell"]):
                 gr.Markdown("# AI Multi-Agent Educational Generation")
                 gr.Markdown(
-                    "Protótipo com interação totalmente por chat: recolha de requisitos, aprovação e reformulação em linguagem natural."
+                    "Protótipo com interação totalmente por chat: recolha de requisitos, aprovação e reformulação em linguagem natural, com anexos para briefing e grounding."
                 )
 
             with gr.Row(elem_classes=["content-shell"], equal_height=True):
@@ -719,7 +811,7 @@ def build_interface():
 
                     chatbot = gr.Chatbot(
                         label="Conversa com o orquestrador",
-                        height=430,
+                        height=260,
                         elem_id="chatbot-panel",
                     )
 
@@ -727,12 +819,28 @@ def build_interface():
                         with gr.Row(elem_classes=["composer-row"]):
                             chat_input = gr.Textbox(
                                 label="Mensagem",
-                                placeholder="Escreve aqui o tema, requisitos, feedback ou aprovação...",
+                                placeholder="Escreve aqui o tema, requisitos, feedback, aprovação ou instruções sobre os anexos...",
                                 lines=4,
                                 scale=8,
                                 elem_classes=["composer-input"],
                             )
                             send_btn = gr.Button("Enviar", variant="primary", scale=1, elem_classes=["send-btn"])
+
+                        with gr.Row(elem_classes=["attachment-controls"]):
+                            attachment_input = gr.File(
+                                label="Anexos",
+                                file_count="multiple",
+                                file_types=[".txt", ".md", ".pdf", ".docx", ".pptx", ".potx", ".png", ".jpg", ".jpeg", ".webp"],
+                                type="filepath",
+                                scale=5,
+                            )
+                            upload_role = gr.Dropdown(
+                                label="Usar anexos como",
+                                choices=["auto", "brief", "support", "visual", "template", "other"],
+                                value="auto",
+                                scale=2,
+                                elem_classes=["attachment-role"],
+                            )
                         reset_btn = gr.Button("Reiniciar conversa", elem_classes=["reset-btn"])
 
                 with gr.Column(scale=5, elem_classes=["right-shell"]):
@@ -778,18 +886,30 @@ def build_interface():
             status_output,
             result_tabs,
             chat_input,
+            attachment_input,
+            js_trigger,          # ← new hidden component for JS
         ]
 
         send_btn.click(
             fn=handle_chat_message,
-            inputs=[app_state, chatbot, chat_input],
+            inputs=[app_state, chatbot, chat_input, attachment_input, upload_role],
             outputs=outputs,
+        ).then(
+            fn=None,
+            inputs=[js_trigger],
+            outputs=None,
+            js="(js) => { if (js) eval(js); }"
         )
 
         chat_input.submit(
             fn=handle_chat_message,
-            inputs=[app_state, chatbot, chat_input],
+            inputs=[app_state, chatbot, chat_input, attachment_input, upload_role],
             outputs=outputs,
+        ).then(
+            fn=None,
+            inputs=[js_trigger],
+            outputs=None,
+            js="(js) => { if (js) eval(js); }"
         )
 
         reset_btn.click(

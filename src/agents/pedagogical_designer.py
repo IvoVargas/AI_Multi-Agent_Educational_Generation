@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict
 
+from src.agents.file_intake import grounding_context_for_state
 from src.models import PedagogicalStructureModel
 from src.services.llm_service import LLMService
 from src.utils.logging_utils import get_logger
@@ -10,7 +11,7 @@ logger = get_logger(__name__)
 llm = LLMService()
 
 
-def _fallback_structure(state: dict) -> Dict:
+def _fallback_structure(state: dict, source_names: list[str]) -> Dict:
     metadata = state.get("metadata", {})
     content_analysis = state.get("content_analysis", {})
     title = metadata.get("title", "").strip() or content_analysis.get("theme", "Apresentação")
@@ -56,6 +57,7 @@ def _fallback_structure(state: dict) -> Dict:
             },
         ],
         "slide_sequence": slide_sequence,
+        "source_documents": source_names,
     }
 
 
@@ -64,9 +66,16 @@ def run_pedagogical_designer(state: dict) -> dict:
     metadata = state.get("metadata", {})
     content_analysis = state.get("content_analysis", {})
     feedback = state.get("structure_feedback", "").strip()
+    query = " ".join(
+        str(part)
+        for part in [content_analysis.get("theme", ""), " ".join(content_analysis.get("main_topics", [])), feedback]
+        if str(part).strip()
+    )
+    grounding_context, source_names = grounding_context_for_state(state, query=query, top_n=5)
 
     system_prompt = """
 És um Designer Pedagógico para um sistema de geração de apresentações educativas.
+Usa a análise conceptual como guia principal e os documentos anexados apenas como suporte factual e de estrutura.
 Responde apenas com JSON válido.
 
 Estrutura obrigatória:
@@ -98,8 +107,11 @@ Análise conceptual:
 Metadados:
 {metadata}
 
+Fontes de apoio:
+{grounding_context or 'Sem fontes adicionais.'}
+
 Feedback anterior:
-{feedback if feedback else "Sem feedback anterior."}
+{feedback if feedback else 'Sem feedback anterior.'}
 """
 
     try:
@@ -108,9 +120,10 @@ Feedback anterior:
             user_prompt=user_prompt,
             schema=PedagogicalStructureModel,
         )
+        pedagogical_structure["source_documents"] = source_names
     except Exception:
         logger.exception("Pedagogical designer failed. Using fallback.")
-        pedagogical_structure = _fallback_structure(state)
+        pedagogical_structure = _fallback_structure(state, source_names)
 
     logger.info("Pedagogical designer completed")
     return {

@@ -22,9 +22,15 @@ FIELD_LABELS = {
 
 def _compute_missing_fields(state: dict) -> List[str]:
     metadata = state.get("metadata", {})
+    uploaded_files = state.get("uploaded_files", []) or []
     missing: List[str] = []
 
-    if not state.get("user_input", "").strip():
+    has_uploaded_grounding = any(
+        item.get("role") in {"brief", "support", "template"} and (item.get("is_textual") or item.get("chunk_count", 0) > 0)
+        for item in state.get("uploaded_files", [])
+    )
+
+    if not state.get("user_input", "").strip() and not has_uploaded_grounding:
         missing.append("text_base")
 
     for key in ["title", "target_audience", "education_level", "presentation_goal"]:
@@ -75,6 +81,7 @@ def _fallback_message(next_action: str, missing_fields: List[str]) -> str:
 
 def _generate_assistant_message(state: dict, next_action: str, missing_fields: List[str]) -> str:
     metadata = state.get("metadata", {})
+    uploaded_files = state.get("uploaded_files", []) or []
 
     system_prompt = """
 És um agente orquestrador de um sistema multiagente para geração de apresentações educativas.
@@ -98,8 +105,10 @@ Estado atual:
 - target_audience: {metadata.get('target_audience', '')}
 - education_level: {metadata.get('education_level', '')}
 - presentation_goal: {metadata.get('presentation_goal', '')}
+- uploaded_files: {[item.get('name') for item in uploaded_files]}
 
 Gera uma mensagem curta ao utilizador em português de Portugal.
+Se existirem ficheiros anexados, podes referir que serão usados como briefing, grounding ou referência visual.
 """
 
     try:

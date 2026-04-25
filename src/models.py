@@ -18,8 +18,7 @@ class ContentAnalysisModel(BaseModel):
     @field_validator("key_concepts", "main_topics", "prerequisites", "possible_difficulties")
     @classmethod
     def clean_list(cls, values: List[str]) -> List[str]:
-        cleaned = [v.strip() for v in values if isinstance(v, str) and v.strip()]
-        return cleaned
+        return [v.strip() for v in values if isinstance(v, str) and v.strip()]
 
 
 class SectionModel(BaseModel):
@@ -126,9 +125,66 @@ class ChatRequirementExtractionModel(BaseModel):
     )
     @classmethod
     def normalize_optional_string(cls, value: object) -> Optional[str]:
-        if value is None:
-            return None
-        if not isinstance(value, str):
+        if value is None or not isinstance(value, str):
             return None
         cleaned = value.strip()
         return cleaned or None
+
+
+class FileRoleClassificationModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["brief", "support", "visual", "template", "other"]
+    rationale: str = Field(min_length=5)
+
+    @field_validator("rationale", mode="before")
+    @classmethod
+    def normalize_rationale(cls, value: object) -> str:
+        if value is None:
+            return "Classificação automática."
+        if not isinstance(value, str):
+            value = str(value)
+        return " ".join(value.split()).strip()
+
+
+class BriefExtractionModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[str] = None
+    target_audience: Optional[str] = None
+    education_level: Optional[str] = None
+    presentation_goal: Optional[str] = None
+    num_slides: Optional[int] = Field(default=None, ge=1, le=100)
+    language: Optional[str] = None
+    extra_instructions: Optional[str] = None
+    text_base: Optional[str] = None
+
+    @field_validator(
+        "title",
+        "target_audience",
+        "education_level",
+        "presentation_goal",
+        "language",
+        "extra_instructions",
+        "text_base",
+        mode="before",
+    )
+    @classmethod
+    def normalize_brief_fields(cls, value: object) -> Optional[str]:
+        if value is None or not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
+class SupportDocumentSummaryModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=5, max_length=600)
+    key_points: List[str] = Field(default_factory=list)
+    preferred_usage: Literal["grounding", "style_reference", "visual_reference", "reference"] = "grounding"
+
+    @field_validator("key_points")
+    @classmethod
+    def normalize_points(cls, values: List[str]) -> List[str]:
+        return [v.strip() for v in values if isinstance(v, str) and v.strip()]
