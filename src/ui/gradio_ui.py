@@ -27,7 +27,7 @@ CHATBOT_HELP = """
 - *Texto-base: os sistemas multiagente permitem dividir tarefas complexas por agentes especializados...*
 - *Aprovo a análise.*
 - *Reformula a estrutura e torna-a mais técnica.*
-- *Anexa um PDF com os requisitos ou documentos de apoio e diz-me se devo tratá-los como brief, apoio, template ou assets visuais.*
+- *Anexa um PDF com os requisitos ou documentos de apoio e diz-me se devo tratá-los como documento de requisitos, documento de apoio, modelo ou referência visual.*
 - *Continua.*
 - *Reinicia.*
 """
@@ -206,13 +206,38 @@ select {
 
 .attachment-controls {
     margin-top: 10px;
-    align-items: end;
+    align-items: stretch;
 }
 
 .attachment-controls .wrap,
 .attachment-controls .block,
-.attachment-role {
+.attachment-role,
+.attachment-file {
     min-height: 0 !important;
+}
+
+.attachment-file [data-testid="file"],
+.attachment-file .file-preview,
+.attachment-file .file-upload,
+.attachment-file .wrap {
+    min-height: 42px !important;
+    max-height: 42px !important;
+    overflow: hidden !important;
+}
+
+.attachment-file [data-testid="file"] label,
+.attachment-file .file-upload label {
+    min-height: 42px !important;
+    padding: 8px 12px !important;
+}
+
+.help-shell [data-testid="status-tracker"] {
+    display: none !important;
+}
+
+.composer-actions {
+    gap: 8px;
+    min-width: 108px;
 }
 
 button.primary,
@@ -221,9 +246,16 @@ button.primary,
     border: none !important;
 }
 
-.send-btn button {
-    min-height: 78px;
+.send-btn button,
+.confirm-btn button {
+    min-height: 35px;
     border-radius: 14px !important;
+}
+
+.confirm-btn button {
+    background: #0f172a !important;
+    border: 1px solid #3b82f6 !important;
+    color: #dbeafe !important;
 }
 
 .reset-btn button {
@@ -355,8 +387,8 @@ button.primary,
 }
 
 .progress-connector {
-    flex: 1 0 24px;
-    min-width: 24px;
+    flex: 1 0 14px;
+    min-width: 14px;
     height: 2px;
     background: linear-gradient(90deg, #243041 0%, #334155 100%);
     border-radius: 999px;
@@ -764,6 +796,26 @@ def handle_chat_message(app_state, chat_history, user_message, uploaded_files, u
     )
 
 
+def handle_confirm_action(app_state, chat_history, uploaded_files, upload_role):
+    state: PrototypeState = dict(app_state) if app_state else create_chat_initial_state()
+    next_action = state.get("next_action", "")
+
+    if next_action == "wait_analysis_approval":
+        confirmation_message = "Aprovo a análise."
+    elif next_action == "wait_structure_approval":
+        confirmation_message = "Aprovo os resultados SOLO e a estrutura pedagógica."
+    else:
+        confirmation_message = "Continua."
+
+    return handle_chat_message(
+        app_state,
+        chat_history,
+        confirmation_message,
+        uploaded_files,
+        upload_role,
+    )
+
+
 def reset_chat():
     state = create_chat_initial_state()
     analysis_md, solo_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
@@ -784,7 +836,7 @@ def reset_chat():
 
 
 def build_interface():
-    with gr.Blocks(title="AI Multi-Agent Educational Generation") as demo:
+    with gr.Blocks(title="Geração Educativa Multiagente") as demo:
         app_state = gr.State(create_chat_initial_state())
 
         # Hidden component to trigger JavaScript safely
@@ -815,9 +867,9 @@ def build_interface():
 
         with gr.Column(elem_classes=["app-shell"]):
             with gr.Column(elem_classes=["header-shell"]):
-                gr.Markdown("# AI Multi-Agent Educational Generation")
+                gr.Markdown("# Geração Educativa Multiagente")
                 gr.Markdown(
-                    "Protótipo com interação totalmente por chat: recolha de requisitos, aprovação e reformulação em linguagem natural, com anexos para briefing e grounding."
+                    "Protótipo com interação por chat: recolha de requisitos, aprovação e reformulação em linguagem natural, com anexos para documento de requisitos, apoio documental, referências visuais ou modelos."
                 )
 
             with gr.Row(elem_classes=["content-shell"], equal_height=True):
@@ -840,7 +892,9 @@ def build_interface():
                                 scale=8,
                                 elem_classes=["composer-input"],
                             )
-                            send_btn = gr.Button("Enviar", variant="primary", scale=1, elem_classes=["send-btn"])
+                            with gr.Column(scale=2, elem_classes=["composer-actions"]):
+                                send_btn = gr.Button("Enviar", variant="primary", elem_classes=["send-btn"])
+                                confirm_btn = gr.Button("Confirmar", variant="secondary", elem_classes=["confirm-btn"])
 
                         with gr.Row(elem_classes=["attachment-controls"]):
                             attachment_input = gr.File(
@@ -849,10 +903,18 @@ def build_interface():
                                 file_types=[".txt", ".md", ".pdf", ".docx", ".pptx", ".potx", ".png", ".jpg", ".jpeg", ".webp"],
                                 type="filepath",
                                 scale=5,
+                                elem_classes=["attachment-file"],
                             )
                             upload_role = gr.Dropdown(
                                 label="Usar anexos como",
-                                choices=["auto", "brief", "support", "visual", "template", "other"],
+                                choices=[
+                                    ("Automático", "auto"),
+                                    ("Documento de requisitos", "brief"),
+                                    ("Documento de apoio", "support"),
+                                    ("Referência visual", "visual"),
+                                    ("Modelo", "template"),
+                                    ("Outro", "other"),
+                                ],
                                 value="auto",
                                 scale=2,
                                 elem_classes=["attachment-role"],
@@ -927,6 +989,17 @@ def build_interface():
         chat_input.submit(
             fn=handle_chat_message,
             inputs=[app_state, chatbot, chat_input, attachment_input, upload_role],
+            outputs=outputs,
+        ).then(
+            fn=None,
+            inputs=[js_trigger],
+            outputs=None,
+            js="(js) => { if (js) eval(js); }"
+        )
+
+        confirm_btn.click(
+            fn=handle_confirm_action,
+            inputs=[app_state, chatbot, attachment_input, upload_role],
             outputs=outputs,
         ).then(
             fn=None,

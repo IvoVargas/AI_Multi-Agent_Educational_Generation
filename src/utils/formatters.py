@@ -24,10 +24,10 @@ REQUIRED_METADATA_FIELDS = [
 ]
 
 ROLE_LABELS = {
-    "brief": "Brief",
-    "support": "Apoio",
-    "visual": "Visual",
-    "template": "Template",
+    "brief": "Documento de requisitos",
+    "support": "Documento de apoio",
+    "visual": "Referência visual",
+    "template": "Modelo",
     "other": "Outro",
 }
 
@@ -49,6 +49,50 @@ IMPORTANCE_LABELS = {
     "secundario": "Secundário",
 }
 
+SLIDE_KIND_LABELS = {
+    "title": "Título",
+    "content": "Conteúdo",
+    "closing": "Encerramento",
+}
+
+CURRENT_STEP_LABELS = {
+    "input": "Entrada de dados",
+    "orchestration": "Orquestração",
+    "content_analysis": "Análise conceptual",
+    "pedagogical_design": "Desenho pedagógico",
+    "multimedia_generation": "Geração multimédia",
+    "export": "Exportação",
+}
+
+STATUS_LABELS = {
+    "initialized": "Inicializado",
+    "awaiting_input": "A aguardar intervenção do utilizador",
+    "ready_to_continue": "Pronto para continuar",
+    "analysis_completed": "Análise conceptual concluída",
+    "solo_structure_completed": "Resultados SOLO e estrutura pedagógica concluídos",
+    "slides_completed": "Plano de slides concluído",
+    "completed": "Concluído",
+    "ingested": "Ficheiro processado",
+}
+
+NEXT_ACTION_LABELS = {
+    "ask_user": "Recolher requisitos",
+    "run_content_analysis": "Gerar análise conceptual",
+    "wait_analysis_approval": "Aguardar aprovação da análise",
+    "run_pedagogical_design": "Gerar resultados SOLO e estrutura pedagógica",
+    "wait_structure_approval": "Aguardar aprovação dos resultados SOLO e da estrutura pedagógica",
+    "run_multimedia_generation": "Gerar plano multimédia",
+    "export_pptx": "Exportar PowerPoint",
+    "completed": "Processo concluído",
+}
+
+
+def _label_from(mapping: Dict[str, str], value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "—"
+    return mapping.get(text, text.replace("_", " "))
+
 
 def _bullet_list(items: List[str]) -> str:
     cleaned = [str(item).strip() for item in items if str(item).strip()]
@@ -60,6 +104,32 @@ def _bullet_list(items: List[str]) -> str:
 def _kv_line(label: str, value: Any) -> str:
     text = str(value).strip() if value is not None else ""
     return f"**{label}:** {text or '—'}"
+
+
+def _structure_field_line(label: str, value: Any) -> str:
+    """Format structure fields with a Markdown hard line break.
+
+    This prevents Gradio/Markdown from collapsing consecutive metadata
+    fields into a single paragraph in the Estrutura tab.
+    """
+    text = str(value).strip() if value is not None else ""
+    return f"**{label}:** {text or '—'}  "
+
+
+def _slide_field_line(label: str, value: Any) -> str:
+    """Format slide metadata with a Markdown hard line break.
+
+    The Slides tab contains several consecutive metadata fields. The two
+    trailing spaces keep each field on its own line in Gradio/Markdown.
+    Multiline fields, such as presenter notes, keep their internal line
+    breaks instead of being collapsed into one paragraph.
+    """
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        return f"**{label}:** —  "
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = "  \n".join(part.strip() for part in text.split("\n"))
+    return f"**{label}:** {text}  "
 
 
 def _metadata_chip(label: str, value: Any, dim: bool = False) -> str:
@@ -186,15 +256,15 @@ def render_status_html(state: Dict[str, Any]) -> str:
         <div class="status-grid">
             <div class="status-card compact">
                 <div class="subtle-label">Fase atual</div>
-                <div class="big-value">{escape(str(state.get('current_step', '—') or '—'))}</div>
+                <div class="big-value">{escape(_label_from(CURRENT_STEP_LABELS, state.get('current_step')))}</div>
             </div>
             <div class="status-card compact">
                 <div class="subtle-label">Estado</div>
-                <div class="big-value">{escape(str(state.get('status', '—') or '—'))}</div>
+                <div class="big-value">{escape(_label_from(STATUS_LABELS, state.get('status')))}</div>
             </div>
             <div class="status-card wide">
                 <div class="subtle-label">Próxima ação</div>
-                <div class="big-value">{escape(str(state.get('next_action', '—') or '—'))}</div>
+                <div class="big-value">{escape(_label_from(NEXT_ACTION_LABELS, state.get('next_action')))}</div>
             </div>
         </div>
 
@@ -218,9 +288,9 @@ def render_status_markdown(state: Dict[str, Any]) -> str:
     missing_fields = state.get("missing_fields", []) or []
     lines = [
         "## Estado do processo",
-        _kv_line("Fase atual", state.get("current_step", "—")),
-        _kv_line("Estado", state.get("status", "—")),
-        _kv_line("Próxima ação", state.get("next_action", "—")),
+        _kv_line("Fase atual", _label_from(CURRENT_STEP_LABELS, state.get("current_step"))),
+        _kv_line("Estado", _label_from(STATUS_LABELS, state.get("status"))),
+        _kv_line("Próxima ação", _label_from(NEXT_ACTION_LABELS, state.get("next_action"))),
         _kv_line("Fontes", state.get("source_summary", "Sem ficheiros anexados.")),
     ]
     if missing_fields:
@@ -262,6 +332,17 @@ def render_analysis_markdown(data: Dict[str, Any]) -> str:
     ]).strip()
 
 
+def _solo_field_line(label: str, value: Any) -> str:
+    """Format SOLO fields with a Markdown hard line break.
+
+    Gradio/Markdown collapses single newlines inside the same paragraph.
+    The two trailing spaces force each SOLO field to appear on its own line
+    without adding excessive blank spacing between fields.
+    """
+    text = str(value).strip() if value is not None else ""
+    return f"**{label}:** {text or '—'}  "
+
+
 def _format_solo_outcome(outcome: Dict[str, Any]) -> str:
     outcome_id = outcome.get("id", "—")
     solo_level = SOLO_LABELS.get(outcome.get("solo_level"), outcome.get("solo_level", "—"))
@@ -273,19 +354,22 @@ def _format_solo_outcome(outcome: Dict[str, Any]) -> str:
     learning_activity = outcome.get("suggested_learning_activity", "")
     assessment = outcome.get("suggested_assessment", "")
 
-    parts = [
+    lines = [
         f"### RA{outcome_id} — {solo_level}",
-        _kv_line("Tipo", outcome_type),
-        _kv_line("Importância", importance),
-        _kv_line("Verbo", verb),
-        f"**Descrição:**\n{description}",
-        f"**Conteúdos/tópicos relacionados:**\n{_bullet_list(related_topics)}",
+        _solo_field_line("Tipo", outcome_type),
+        _solo_field_line("Importância", importance),
+        _solo_field_line("Verbo", verb),
+        _solo_field_line("Descrição", description),
+        "**Conteúdos/tópicos relacionados:**",
+        _bullet_list(related_topics),
     ]
+    if learning_activity or assessment:
+        lines.append("")
     if learning_activity:
-        parts.append(_kv_line("Atividade de ensino sugerida", learning_activity))
+        lines.append(_solo_field_line("Atividade de ensino sugerida", learning_activity))
     if assessment:
-        parts.append(_kv_line("Avaliação sugerida", assessment))
-    return "\n".join(parts)
+        lines.append(_solo_field_line("Avaliação sugerida", assessment))
+    return "\n".join(lines)
 
 
 def render_solo_markdown(state_or_structure: Dict[str, Any]) -> str:
@@ -309,8 +393,9 @@ def render_structure_markdown(data: Dict[str, Any]) -> str:
     for idx, section in enumerate(data.get("sections", []), start=1):
         sections_md.append("\n".join([
             f"### Secção {idx} — {section.get('section_title', '—')}",
-            _kv_line("Objetivo", section.get("goal", "—")),
-            f"**Tópicos:**\n{_bullet_list(section.get('topics', []))}",
+            _structure_field_line("Objetivo", section.get("goal", "—")),
+            "**Tópicos:**",
+            _bullet_list(section.get("topics", [])),
         ]))
 
     slide_seq_md = []
@@ -320,10 +405,11 @@ def render_structure_markdown(data: Dict[str, Any]) -> str:
         solo_label = SOLO_LABELS.get(slide.get("solo_level"), slide.get("solo_level", "—"))
         slide_seq_md.append("\n".join([
             f"### Slide {slide.get('slide_number', '—')} — {slide.get('title', '—')}",
-            _kv_line("Objetivo", slide.get("objective", "—")),
-            _kv_line("Resultados SOLO associados", outcome_label),
-            _kv_line("Nível SOLO dominante", solo_label),
-            f"**Pontos de conteúdo:**\n{_bullet_list(slide.get('content_points', []))}",
+            _structure_field_line("Objetivo", slide.get("objective", "—")),
+            _structure_field_line("Resultados SOLO associados", outcome_label),
+            _structure_field_line("Nível SOLO dominante", solo_label),
+            "**Pontos de conteúdo:**",
+            _bullet_list(slide.get("content_points", [])),
         ]))
 
     parts = [
@@ -350,18 +436,23 @@ def render_slide_plan_markdown(slide_plan: List[Dict[str, Any]]) -> str:
         outcome_ids = slide.get("learning_outcome_ids", []) or []
         outcome_label = ", ".join(f"RA{oid}" for oid in outcome_ids) if outcome_ids else "—"
         solo_label = SOLO_LABELS.get(slide.get("solo_level"), slide.get("solo_level", "—"))
+        kind_label = SLIDE_KIND_LABELS.get(slide.get("kind", "content"), slide.get("kind", "content"))
         block = [
             f"### Slide {slide.get('slide_number', '—')} — {slide.get('title', '—')}",
-            _kv_line("Tipo", slide.get("kind", "content")),
-            _kv_line("Resultados SOLO associados", outcome_label),
-            _kv_line("Nível SOLO", solo_label),
-            f"**Pontos principais:**\n{_bullet_list(slide.get('bullets', []))}",
-            _kv_line("Notas do apresentador", slide.get("speaker_notes", "—")),
-            _kv_line("Descrição visual", slide.get("visual_description", "—")),
-            _kv_line("Imagem gerada", slide.get("image_path", "—") or "—"),
+            _slide_field_line("Tipo", kind_label),
+            _slide_field_line("Resultados SOLO associados", outcome_label),
+            _slide_field_line("Nível SOLO", solo_label),
         ]
         if slide.get("learning_outcome_summary"):
-            block.insert(4, _kv_line("Resumo do alinhamento", slide.get("learning_outcome_summary")))
+            block.append(_slide_field_line("Resumo do alinhamento", slide.get("learning_outcome_summary")))
+        block.extend([
+            "**Pontos principais:**",
+            _bullet_list(slide.get("bullets", [])),
+            "",
+            _slide_field_line("Notas do apresentador", slide.get("speaker_notes", "—")),
+            _slide_field_line("Descrição visual", slide.get("visual_description", "—")),
+            _slide_field_line("Imagem gerada", slide.get("image_path", "—") or "—"),
+        ])
         blocks.append("\n".join(block))
     unique_sources = list(dict.fromkeys(source_documents))
     if unique_sources:

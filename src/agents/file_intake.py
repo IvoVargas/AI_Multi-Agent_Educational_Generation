@@ -14,6 +14,15 @@ llm = LLMService()
 
 VALID_ROLES = {"auto", "brief", "support", "visual", "template", "other"}
 
+ROLE_LABELS = {
+    "auto": "Automático",
+    "brief": "Documento de requisitos",
+    "support": "Documento de apoio",
+    "visual": "Referência visual",
+    "template": "Modelo",
+    "other": "Outro",
+}
+
 
 def _safe_int(value: object) -> Optional[int]:
     try:
@@ -76,7 +85,7 @@ Escreve uma racional curta, mas sem limite rígido de caracteres.
     try:
         response = llm.generate_structured(system_prompt=system_prompt, user_prompt=user_prompt, schema=FileRoleClassificationModel)
         role = response.get("role", heuristic)
-        rationale = response.get("rationale", "Classificação automática por LLM.")
+        rationale = response.get("rationale", "Classificação automática pelo LLM.")
         if role not in VALID_ROLES:
             role = heuristic
         return role, rationale
@@ -274,7 +283,7 @@ def add_uploaded_files_to_state(
 
         if explicit_role == "auto" and not first_auto_brief_assigned:
             role = "brief"
-            rationale = "Primeiro ficheiro em modo auto: tratado como briefing principal."
+            rationale = "Primeiro ficheiro em modo automático: tratado como documento de requisitos principal."
             first_auto_brief_assigned = True
         else:
             role, rationale = classify_file_role(file_record, explicit_role=explicit_role)
@@ -285,7 +294,7 @@ def add_uploaded_files_to_state(
         if role == "brief":
             brief_data = extract_brief_metadata(file_record)
             file_record["summary_data"] = brief_data
-            file_record["summary"] = "Documento usado como briefing principal."
+            file_record["summary"] = "Documento usado como documento de requisitos principal."
             _merge_brief_into_state(updated, brief_data)
             used_for = ["metadata_extraction", "text_base"]
         elif role == "support":
@@ -298,7 +307,7 @@ def add_uploaded_files_to_state(
         elif role == "template":
             summary = summarize_support_document(file_record)
             file_record["summary_data"] = summary
-            file_record["summary"] = summary.get("summary", "Template de referência.")
+            file_record["summary"] = summary.get("summary", "Modelo de referência.")
             file_record["key_points"] = summary.get("key_points", [])
             used_for = ["style_reference"]
             knowledge_chunks.extend(_build_knowledge_chunks(file_record, role))
@@ -316,8 +325,9 @@ def add_uploaded_files_to_state(
         file_record["used_for"] = used_for
         attachments.append(file_record)
         existing_paths.add(str(file_path))
+        role_label = ROLE_LABELS.get(role, role)
         messages.append(
-            f"- **{file_record['name']}** → `{role}`. {file_record.get('summary', '').strip() or rationale}"
+            f"- **{file_record['name']}** → **{role_label}**. {file_record.get('summary', '').strip() or rationale}"
         )
 
     updated["uploaded_files"] = attachments
@@ -349,10 +359,10 @@ def grounding_context_for_state(state: Dict[str, Any], query: str, top_n: int = 
     visuals = [item.get("name") for item in attachments if item.get("role") == "visual"]
     extras: List[str] = []
     if templates:
-        extras.append("Templates ou referências de estilo disponíveis: " + ", ".join(map(str, templates[:3])))
+        extras.append("Modelos ou referências de estilo disponíveis: " + ", ".join(map(str, templates[:3])))
         source_names.extend([name for name in templates if name not in source_names])
     if visuals:
-        extras.append("Assets visuais disponíveis: " + ", ".join(map(str, visuals[:5])))
+        extras.append("Referências visuais disponíveis: " + ", ".join(map(str, visuals[:5])))
         source_names.extend([name for name in visuals if name not in source_names])
 
     context_parts = []
