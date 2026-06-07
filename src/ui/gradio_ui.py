@@ -15,6 +15,8 @@ from src.utils.formatters import (
     render_analysis_preview_for_chat,
     render_slide_plan_markdown,
     render_slide_plan_preview_for_chat,
+    render_solo_markdown,
+    render_solo_preview_for_chat,
     render_status_html,
     render_structure_markdown,
     render_structure_preview_for_chat,
@@ -299,12 +301,12 @@ button.primary,
     align-items: center;
     gap: 8px;
     flex-wrap: nowrap;
-    overflow-x: hidden;
+    overflow-x: auto;
     padding-bottom: 2px;
 }
 
 .progress-step {
-    min-width: 92px;
+    min-width: 76px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -517,6 +519,7 @@ button.primary,
 
 TAB_STATUS = "status"
 TAB_ANALYSIS = "analysis"
+TAB_SOLO = "solo"
 TAB_STRUCTURE = "structure"
 TAB_SLIDES = "slides"
 TAB_EXPORT = "export"
@@ -584,6 +587,11 @@ def _assistant_reply_from_state(
         if preview:
             parts.append(preview)
 
+    if not previous_state.get("solo_learning_outcomes") and current_state.get("solo_learning_outcomes"):
+        preview = render_solo_preview_for_chat(current_state)
+        if preview:
+            parts.append(preview)
+
     if not previous_state.get("pedagogical_structure") and current_state.get("pedagogical_structure"):
         preview = render_structure_preview_for_chat(current_state.get("pedagogical_structure", {}))
         if preview:
@@ -605,6 +613,8 @@ def _recommended_tab_name(state: Dict[str, Any]) -> str:
         return "Exportar"
     if state.get("slide_plan"):
         return "Slides"
+    if state.get("solo_learning_outcomes") and not state.get("structure_approved"):
+        return "SOLO"
     if state.get("pedagogical_structure"):
         return "Estrutura"
     if state.get("content_analysis"):
@@ -617,6 +627,7 @@ def _render_outputs(state: Dict[str, Any]):
     file_update = gr.update(value=presentation_path) if presentation_path else gr.update()
     return (
         render_analysis_markdown(state.get("content_analysis", {})),
+        render_solo_markdown(state),
         render_structure_markdown(state.get("pedagogical_structure", {})),
         render_slide_plan_markdown(state.get("slide_plan", [])),
         file_update,
@@ -653,7 +664,7 @@ def _apply_chat_intent(state: Dict[str, Any], message: str, extracted: Dict[str,
             return state, state["assistant_message"]
         state["structure_approved"] = True
         state = run_orchestrated_cycle(state)
-        return state, _assistant_reply_from_state(previous_state, state, "Estrutura aprovada.")
+        return state, _assistant_reply_from_state(previous_state, state, "Estrutura e resultados SOLO aprovados.")
 
     if intent in {"regenerate_analysis", "unknown", "provide_requirements"} and state.get("next_action") == "wait_analysis_approval":
         feedback = extracted.get("feedback") or message.strip()
@@ -661,6 +672,7 @@ def _apply_chat_intent(state: Dict[str, Any], message: str, extracted: Dict[str,
         state["analysis_approved"] = False
         state["content_analysis"] = {}
         state["pedagogical_structure"] = {}
+        state["solo_learning_outcomes"] = []
         state["structure_approved"] = False
         state["slide_plan"] = []
         state["presentation_path"] = ""
@@ -673,10 +685,11 @@ def _apply_chat_intent(state: Dict[str, Any], message: str, extracted: Dict[str,
         state["analysis_approved"] = True
         state["structure_approved"] = False
         state["pedagogical_structure"] = {}
+        state["solo_learning_outcomes"] = []
         state["slide_plan"] = []
         state["presentation_path"] = ""
         state = run_orchestrated_cycle(state)
-        return state, _assistant_reply_from_state(previous_state, state, "Estrutura reformulada.")
+        return state, _assistant_reply_from_state(previous_state, state, "Resultados SOLO e estrutura reformulados.")
 
     if intent in {"continue", "provide_requirements", "unknown"}:
         state = run_orchestrated_cycle(state)
@@ -694,11 +707,12 @@ def handle_chat_message(app_state, chat_history, user_message, uploaded_files, u
     previous_state = dict(state)
 
     if not message and not file_paths:
-        analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
+        analysis_md, solo_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
         return (
             state,
             history,
             analysis_md,
+            solo_md,
             structure_md,
             slides_md,
             file_output,
@@ -728,7 +742,7 @@ def handle_chat_message(app_state, chat_history, user_message, uploaded_files, u
     _append_turn(state, "assistant", assistant_reply)
     history.append({"role": "assistant", "content": assistant_reply})
 
-    analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
+    analysis_md, solo_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
 
     # === SAFE AUTOMATIC TAB SWITCH ===
     tab_name = _recommended_tab_name(state)
@@ -738,6 +752,7 @@ def handle_chat_message(app_state, chat_history, user_message, uploaded_files, u
         state,
         history,
         analysis_md,
+        solo_md,
         structure_md,
         slides_md,
         file_output,
@@ -751,11 +766,12 @@ def handle_chat_message(app_state, chat_history, user_message, uploaded_files, u
 
 def reset_chat():
     state = create_chat_initial_state()
-    analysis_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
+    analysis_md, solo_md, structure_md, slides_md, file_output, status_html = _render_outputs(state)
     return (
         state,
         [],
         analysis_md,
+        solo_md,
         structure_md,
         slides_md,
         file_output,
@@ -857,6 +873,12 @@ def build_interface():
                                 elem_classes=["panel-shell", "result-panel"],
                                 height=690,
                             )
+                        with gr.Tab("SOLO", id=TAB_SOLO):
+                            solo_output = gr.Markdown(
+                                render_solo_markdown(create_chat_initial_state()),
+                                elem_classes=["panel-shell", "result-panel"],
+                                height=690,
+                            )
                         with gr.Tab("Estrutura", id=TAB_STRUCTURE):
                             structure_output = gr.Markdown(
                                 render_structure_markdown({}),
@@ -880,6 +902,7 @@ def build_interface():
             app_state,
             chatbot,
             analysis_output,
+            solo_output,
             structure_output,
             slides_output,
             pptx_output,

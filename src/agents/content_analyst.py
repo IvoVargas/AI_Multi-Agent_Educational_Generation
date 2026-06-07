@@ -102,6 +102,7 @@ Feedback anterior:
         "content_analysis": content_analysis,
         "analysis_approved": False,
         "pedagogical_structure": {},
+        "solo_learning_outcomes": [],
         "structure_approved": False,
         "slide_plan": [],
         "presentation_path": "",

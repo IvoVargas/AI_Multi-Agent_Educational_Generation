@@ -1,19 +1,21 @@
 # AI Multi-Agent Educational Generation (MVP)
 
-Protótipo funcional de sistema **multi-agente** para apoiar docentes na geração de **plano de slides PowerPoint**.
+Protótipo funcional de sistema **multi-agente** para apoiar docentes na geração de **plano de slides PowerPoint**, com uma etapa pedagógica explícita baseada na **Taxonomia SOLO**.
 
 ## Objetivo do MVP (V1)
 
 A primeira versão do protótipo deve ser capaz de:
 1. **receber um texto-base e metadados pela interface Gradio**
 2. **executar um fluxo LangGraph com três agentes**
-3. **mostrar ao utilizador:**
+3. **gerar resultados de aprendizagem classificados segundo a Taxonomia SOLO antes da geração multimédia**
+4. **mostrar ao utilizador:**
    - análise conceptual;
+   - resultados de aprendizagem SOLO;
    - estrutura pedagógica;
    - proposta final de slides;
-4. **permitir validação/reformulação em dois pontos**
-5. **gerar uma apresentação final em PowerPoint (.pptx)**
-6. **incluir, por slide, uma descrição visual ou prompt de imagem.**
+5. **permitir validação/reformulação em dois pontos**
+6. **gerar uma apresentação final em PowerPoint (.pptx)**
+7. **incluir, por slide, uma descrição visual ou prompt de imagem.**
 
 ---
 Nesta V1, a geração real de imagem pode ficar opcional. O essencial é garantir:
@@ -28,7 +30,8 @@ Nesta V1, a geração real de imagem pode ficar opcional. O essencial é garanti
    - gera texto dos slides;
    - gera sugestões visuais por slide;
    - exporta ficheiro .pptx;
-   - suporta reformulação após análise e após estrutura pedagógica.
+   - suporta reformulação após análise e após resultados SOLO/estrutura pedagógica;
+   - alinha cada slide com um ou mais resultados de aprendizagem SOLO.
 
 2. **O que a V1 não precisa de fazer:**
    - autenticação;
@@ -94,9 +97,9 @@ START
       -> ask_user / stop
       -> content_analysis
       -> orchestrator
-      -> pedagogical_design
+      -> pedagogical_design // gera resultados SOLO + estrutura
       -> orchestrator
-      -> multimedia_generation
+      -> multimedia_generation // consome resultados SOLO para planear slides
       -> orchestrator
       -> export_pptx
       -> END
@@ -113,9 +116,10 @@ A interface com três zonas:
  - mostrar análise conceptual;
  - botão “Aprovar análise”;
  - caixa “Feedback de reformulação”.
+ - mostrar resultados de aprendizagem SOLO;
  - mostrar estrutura pedagógica;
- - botão “Aprovar estrutura”;
- - caixa “Feedback de reformulação”.
+ - botão/ordem por chat para “Aprovar estrutura”;
+ - feedback por chat para reformular resultados SOLO e estrutura.
 ### Zona 3 — resultado final
  - pré-visualização textual dos slides;
  - botão de download do .pptx.
@@ -141,8 +145,8 @@ Aceder à interface em `http://127.0.0.1:7860` para testar o protótipo.
 3. Rever a análise e:
    - aprovar, ou
    - pedir reformulação com feedback.
-4. Clicar em **Gerar estrutura pedagógica**.
-5. Rever a estrutura e:
+4. Gerar **resultados de aprendizagem SOLO** e **estrutura pedagógica**.
+5. Rever os resultados SOLO e a estrutura e:
    - aprovar, ou
    - pedir reformulação com feedback.
 6. Clicar em **Gerar PowerPoint final**.

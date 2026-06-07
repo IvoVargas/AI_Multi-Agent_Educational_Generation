@@ -40,13 +40,13 @@ def _fallback_extract(message: str, state: dict) -> Dict:
     if any(term in lower for term in ["reinicia", "recomeça", "recomeca", "novo tema", "reset"]):
         return {"user_intent": "restart"}
 
-    approve_tokens = ["aprovo", "aprovado", "pode avançar", "podes avançar", "continua", "segue", "ok avança", "ok avanca"]
+    approve_tokens = ["aprovo", "aprovado", "pode avançar", "podes avançar", "continua", "segue", "ok avança", "ok avanca", "aprovo os resultados", "aprovo a solo", "aprovo solo"]
     if next_action == "wait_analysis_approval" and any(term in lower for term in approve_tokens):
         return {"user_intent": "approve_analysis"}
     if next_action == "wait_structure_approval" and any(term in lower for term in approve_tokens):
         return {"user_intent": "approve_structure"}
 
-    regenerate_tokens = ["reformula", "rever", "altera", "melhora", "mais técnico", "mais tecnico", "mais simples", "encurta", "expande"]
+    regenerate_tokens = ["reformula", "rever", "altera", "melhora", "mais técnico", "mais tecnico", "mais simples", "encurta", "expande", "solo", "resultados de aprendizagem"]
     if next_action == "wait_analysis_approval" and any(term in lower for term in regenerate_tokens):
         return {"user_intent": "regenerate_analysis", "feedback": message.strip()}
     if next_action == "wait_structure_approval" and any(term in lower for term in regenerate_tokens):
@@ -85,9 +85,9 @@ Recebes uma mensagem livre do utilizador e devolves apenas JSON válido.
 Classifica a intenção do utilizador numa destas categorias:
 - provide_requirements: está a dar ou alterar requisitos
 - approve_analysis: aprova a análise conceptual
-- approve_structure: aprova a estrutura pedagógica
+- approve_structure: aprova a estrutura pedagógica e/ou os resultados de aprendizagem SOLO
 - regenerate_analysis: quer reformular a análise conceptual
-- regenerate_structure: quer reformular a estrutura pedagógica
+- regenerate_structure: quer reformular a estrutura pedagógica e/ou os resultados de aprendizagem SOLO
 - continue: quer apenas que avances para o próximo passo
 - restart: quer reiniciar o processo
 - unknown: não foi possível determinar

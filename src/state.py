@@ -31,6 +31,7 @@ class PrototypeState(TypedDict, total=False):
     analysis_feedback: str
 
     pedagogical_structure: Dict[str, Any]
+    solo_learning_outcomes: List[Dict[str, Any]]
     structure_approved: bool
     structure_feedback: str
 
@@ -79,6 +80,7 @@ def create_initial_state(
         "analysis_approved": False,
         "analysis_feedback": "",
         "pedagogical_structure": {},
+        "solo_learning_outcomes": [],
         "structure_approved": False,
         "structure_feedback": "",
         "slide_plan": [],

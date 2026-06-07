@@ -31,6 +31,24 @@ ROLE_LABELS = {
     "other": "Outro",
 }
 
+SOLO_LABELS = {
+    "SOLO_2": "SOLO 2 — Uniestrutural",
+    "SOLO_3": "SOLO 3 — Multiestrutural",
+    "SOLO_4": "SOLO 4 — Relacional",
+    "SOLO_5": "SOLO 5 — Abstrato alargado",
+}
+
+OUTCOME_TYPE_LABELS = {
+    "conhecimento_teorico": "Conhecimento teórico",
+    "competencia_pratica_tecnica": "Competência prática/técnica",
+    "competencia_social": "Competência social",
+}
+
+IMPORTANCE_LABELS = {
+    "principal": "Principal",
+    "secundario": "Secundário",
+}
+
 
 def _bullet_list(items: List[str]) -> str:
     cleaned = [str(item).strip() for item in items if str(item).strip()]
@@ -65,10 +83,18 @@ def _source_chip(label: str, value: str) -> str:
     )
 
 
+def _get_solo_outcomes(state_or_structure: Dict[str, Any]) -> List[Dict[str, Any]]:
+    outcomes = state_or_structure.get("solo_learning_outcomes", []) or []
+    if not outcomes and state_or_structure.get("pedagogical_structure"):
+        outcomes = state_or_structure.get("pedagogical_structure", {}).get("solo_learning_outcomes", []) or []
+    return outcomes
+
+
 def _stage_flags(state: Dict[str, Any]) -> List[Dict[str, str]]:
     metadata = state.get("metadata", {})
     missing_fields = set(state.get("missing_fields", []) or [])
     content_analysis = bool(state.get("content_analysis"))
+    solo_outcomes = bool(_get_solo_outcomes(state))
     pedagogical_structure = bool(state.get("pedagogical_structure"))
     slide_plan = bool(state.get("slide_plan"))
     presentation_path = bool(state.get("presentation_path"))
@@ -87,6 +113,7 @@ def _stage_flags(state: Dict[str, Any]) -> List[Dict[str, str]]:
     return [
         {"id": "status", "label": "Requisitos", "state": "complete" if requirements_complete else "active" if next_action == "ask_user" else "pending"},
         {"id": "analysis", "label": "Análise", "state": "complete" if content_analysis else "active" if next_action in {"run_content_analysis", "wait_analysis_approval"} else "pending"},
+        {"id": "solo", "label": "SOLO", "state": "complete" if solo_outcomes else "active" if next_action in {"run_pedagogical_design", "wait_structure_approval"} else "pending"},
         {"id": "structure", "label": "Estrutura", "state": "complete" if pedagogical_structure else "active" if next_action in {"run_pedagogical_design", "wait_structure_approval"} else "pending"},
         {"id": "slides", "label": "Slides", "state": "complete" if slide_plan else "active" if next_action in {"run_multimedia_generation"} else "pending"},
         {"id": "export", "label": "Exportação", "state": "complete" if presentation_path else "active" if next_action in {"export_pptx", "completed"} else "pending"},
@@ -235,6 +262,45 @@ def render_analysis_markdown(data: Dict[str, Any]) -> str:
     ]).strip()
 
 
+def _format_solo_outcome(outcome: Dict[str, Any]) -> str:
+    outcome_id = outcome.get("id", "—")
+    solo_level = SOLO_LABELS.get(outcome.get("solo_level"), outcome.get("solo_level", "—"))
+    outcome_type = OUTCOME_TYPE_LABELS.get(outcome.get("outcome_type"), outcome.get("outcome_type", "—"))
+    importance = IMPORTANCE_LABELS.get(outcome.get("importance"), outcome.get("importance", "—"))
+    verb = outcome.get("action_verb", "—")
+    description = outcome.get("description", "—")
+    related_topics = outcome.get("related_topics", [])
+    learning_activity = outcome.get("suggested_learning_activity", "")
+    assessment = outcome.get("suggested_assessment", "")
+
+    parts = [
+        f"### RA{outcome_id} — {solo_level}",
+        _kv_line("Tipo", outcome_type),
+        _kv_line("Importância", importance),
+        _kv_line("Verbo", verb),
+        f"**Descrição:**\n{description}",
+        f"**Conteúdos/tópicos relacionados:**\n{_bullet_list(related_topics)}",
+    ]
+    if learning_activity:
+        parts.append(_kv_line("Atividade de ensino sugerida", learning_activity))
+    if assessment:
+        parts.append(_kv_line("Avaliação sugerida", assessment))
+    return "\n".join(parts)
+
+
+def render_solo_markdown(state_or_structure: Dict[str, Any]) -> str:
+    outcomes = _get_solo_outcomes(state_or_structure)
+    if not outcomes:
+        return "## Resultados de aprendizagem SOLO\n\nAinda não foram gerados."
+
+    blocks = [
+        "## Resultados de aprendizagem SOLO",
+        "Estes resultados funcionam como a camada pedagógica intermédia antes da geração dos conteúdos multimédia. O nível SOLO_1 não é usado porque não representa um resultado observável adequado.",
+    ]
+    blocks.extend(_format_solo_outcome(outcome) for outcome in outcomes)
+    return "\n\n".join(blocks)
+
+
 def render_structure_markdown(data: Dict[str, Any]) -> str:
     if not data:
         return "## Estrutura pedagógica\n\nAinda não foi gerada."
@@ -249,16 +315,21 @@ def render_structure_markdown(data: Dict[str, Any]) -> str:
 
     slide_seq_md = []
     for slide in data.get("slide_sequence", []):
+        outcome_ids = slide.get("learning_outcome_ids", []) or []
+        outcome_label = ", ".join(f"RA{oid}" for oid in outcome_ids) if outcome_ids else "—"
+        solo_label = SOLO_LABELS.get(slide.get("solo_level"), slide.get("solo_level", "—"))
         slide_seq_md.append("\n".join([
             f"### Slide {slide.get('slide_number', '—')} — {slide.get('title', '—')}",
             _kv_line("Objetivo", slide.get("objective", "—")),
+            _kv_line("Resultados SOLO associados", outcome_label),
+            _kv_line("Nível SOLO dominante", solo_label),
             f"**Pontos de conteúdo:**\n{_bullet_list(slide.get('content_points', []))}",
         ]))
 
     parts = [
         "## Estrutura pedagógica",
         _kv_line("Título da apresentação", data.get("presentation_title", "—")),
-        f"**Objetivos de aprendizagem:**\n{_bullet_list(data.get('learning_objectives', []))}",
+        f"**Objetivos de aprendizagem textuais:**\n{_bullet_list(data.get('learning_objectives', []))}",
         "## Secções",
         "\n\n".join(sections_md) if sections_md else "Ainda sem secções.",
         "## Sequência de slides",
@@ -276,14 +347,22 @@ def render_slide_plan_markdown(slide_plan: List[Dict[str, Any]]) -> str:
     source_documents = []
     for slide in slide_plan:
         source_documents.extend(slide.get("source_documents", []))
-        blocks.append("\n".join([
+        outcome_ids = slide.get("learning_outcome_ids", []) or []
+        outcome_label = ", ".join(f"RA{oid}" for oid in outcome_ids) if outcome_ids else "—"
+        solo_label = SOLO_LABELS.get(slide.get("solo_level"), slide.get("solo_level", "—"))
+        block = [
             f"### Slide {slide.get('slide_number', '—')} — {slide.get('title', '—')}",
             _kv_line("Tipo", slide.get("kind", "content")),
+            _kv_line("Resultados SOLO associados", outcome_label),
+            _kv_line("Nível SOLO", solo_label),
             f"**Pontos principais:**\n{_bullet_list(slide.get('bullets', []))}",
             _kv_line("Notas do apresentador", slide.get("speaker_notes", "—")),
             _kv_line("Descrição visual", slide.get("visual_description", "—")),
             _kv_line("Imagem gerada", slide.get("image_path", "—") or "—"),
-        ]))
+        ]
+        if slide.get("learning_outcome_summary"):
+            block.insert(4, _kv_line("Resumo do alinhamento", slide.get("learning_outcome_summary")))
+        blocks.append("\n".join(block))
     unique_sources = list(dict.fromkeys(source_documents))
     if unique_sources:
         blocks.append(f"**Fontes visuais/factuais consideradas:** {', '.join(unique_sources)}")
@@ -298,6 +377,20 @@ def render_analysis_preview_for_chat(data: Dict[str, Any]) -> str:
         "### Resumo da análise conceptual",
         _kv_line("Tema", data.get("theme", "—")),
         _kv_line("Tópicos principais", ", ".join(topics) if topics else "—"),
+    ])
+
+
+def render_solo_preview_for_chat(state_or_structure: Dict[str, Any]) -> str:
+    outcomes = _get_solo_outcomes(state_or_structure)
+    if not outcomes:
+        return ""
+    levels = [outcome.get("solo_level", "—") for outcome in outcomes]
+    first = outcomes[0]
+    return "\n".join([
+        "### Resumo dos resultados SOLO",
+        _kv_line("Total", len(outcomes)),
+        _kv_line("Níveis usados", ", ".join(str(level) for level in dict.fromkeys(levels))),
+        _kv_line("Primeiro resultado", f"RA{first.get('id', '—')} — {first.get('description', '—')}")
     ])
 
 

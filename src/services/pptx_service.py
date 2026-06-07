@@ -243,7 +243,7 @@ def _add_section_label(slide, text: str) -> None:
         slide,
         Inches(0.65),
         Inches(1.28),
-        Inches(2.2),
+        Inches(4.8),
         Inches(0.25),
         text,
     )
@@ -302,6 +302,14 @@ def _build_content_slide(slide, item: Dict[str, Any]) -> None:
 
     _add_title_text(slide, item.get("title", "Slide"), size=23)
     _add_body_box(slide)
+
+    solo_level = item.get("solo_level")
+    outcome_ids = item.get("learning_outcome_ids", []) or []
+    if solo_level or outcome_ids:
+        outcome_label = ", ".join(f"RA{oid}" for oid in outcome_ids) if outcome_ids else "RA —"
+        solo_label = str(solo_level).replace("_", " ") if solo_level else "SOLO"
+        _add_section_label(slide, f"{solo_label} · {outcome_label}")
+
     _add_bullets(slide, item.get("bullets", []))
 
     _add_image_or_visual_text(

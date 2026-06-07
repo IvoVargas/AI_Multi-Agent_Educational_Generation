@@ -62,13 +62,13 @@ def _fallback_message(next_action: str, missing_fields: List[str]) -> str:
         return "A análise conceptual está pronta. Revê o resultado e aprova ou pede reformulação."
 
     if next_action == "run_pedagogical_design":
-        return "A análise foi aprovada. Vou gerar a estrutura pedagógica."
+        return "A análise foi aprovada. Vou gerar os resultados de aprendizagem SOLO e a estrutura pedagógica."
 
     if next_action == "wait_structure_approval":
-        return "A estrutura pedagógica está pronta. Revê o resultado e aprova ou pede reformulação."
+        return "Os resultados SOLO e a estrutura pedagógica estão prontos. Revê o resultado e aprova ou pede reformulação."
 
     if next_action == "run_multimedia_generation":
-        return "A estrutura foi aprovada. Vou preparar o plano de slides e os elementos visuais."
+        return "A estrutura e os resultados SOLO foram aprovados. Vou preparar o plano de slides e os elementos visuais alinhados com esses resultados."
 
     if next_action == "export_pptx":
         return "O plano multimédia está concluído. Vou exportar o PowerPoint final."
@@ -101,6 +101,7 @@ Estado atual:
 - status: {state.get('status', '')}
 - next_action: {next_action}
 - missing_fields: {missing_fields}
+- solo_outcomes_count: {len(state.get('solo_learning_outcomes', []) or [])}
 - title: {metadata.get('title', '')}
 - target_audience: {metadata.get('target_audience', '')}
 - education_level: {metadata.get('education_level', '')}
